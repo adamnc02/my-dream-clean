@@ -4487,16 +4487,11 @@ function buildInvoicePdfBlob(invoice, client) {
   if (hasLogo) {
     try { doc.addImage(appState.settings.logoDataUrl, 'PNG', rightX - 50, ry - 8, 50, 50); ry += 50; } catch (e) { /* bad/unsupported image data — skip the logo, never block PDF generation */ }
   }
-  // Spec 5.4.1 only calls for "logo and business address" up here — the
-  // logo already carries the wordmark, so the name is only printed as a
-  // standalone line when there's no logo to speak for the business yet.
-  if (!hasLogo) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-    doc.text(bizName, rightX, ry, { align: 'right' }); ry += 16;
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-  } else {
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-  }
+  // Business name now always prints here — below the logo when there is
+  // one, or standalone when there isn't — directly above the address.
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+  doc.text(bizName, rightX, ry, { align: 'right' }); ry += 16;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
   if (bizAddr && bizAddr.line1) { doc.text(bizAddr.line1, rightX, ry, { align: 'right' }); ry += 14; }
   if (bizAddr && bizAddr.line2) { doc.text(bizAddr.line2, rightX, ry, { align: 'right' }); ry += 14; }
   if (bizAddr && bizAddr.postcode) { doc.text(bizAddr.postcode, rightX, ry, { align: 'right' }); ry += 14; }
