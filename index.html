@@ -985,6 +985,10 @@ h3 {
       </div>
 
       <div class="divider-hero"></div>
+      <div class="segmented" id="summary-viewmode-segmented" style="margin-bottom:10px;">
+        <button type="button" class="active" data-value="actual" onclick="setSegmented('summary-viewmode-segmented','actual'); summaryViewModeChanged();">Actual</button>
+        <button type="button" data-value="projected" onclick="setSegmented('summary-viewmode-segmented','projected'); summaryViewModeChanged();">Projected</button>
+      </div>
       <div id="summary-metrics"></div>
 
       <div class="divider"></div>
@@ -1023,12 +1027,13 @@ h3 {
       <div class="form-group">
         <div class="label">Business address</div>
         <div class="row" style="gap:8px;">
-          <input type="text" id="settings-bizaddress-postcode-input" placeholder="Postcode, e.g. BN1 1AA" style="flex:1;">
-          <button type="button" class="btn btn-secondary" style="padding:12px 14px;" onclick="lookupPostcodeForSettings('bizaddress')">Look up</button>
+          <input type="text" id="settings-bizaddress-postcode-input" placeholder="Postcode, e.g. BN1 1AA" style="flex:1;" oninput="resetAddressLookup('bizaddress')">
+          <button type="button" class="btn btn-secondary" style="padding:12px 14px;" onclick="lookupAddressesFor('bizaddress')">Look up</button>
         </div>
         <div id="settings-bizaddress-postcode-status" class="form-hint"></div>
         <div style="margin-top:10px;">
-          <input type="text" id="settings-bizaddress-line-input" placeholder="House name/number and street">
+          <input type="text" id="settings-bizaddress-line-input" placeholder="House name/number and street" style="margin-bottom:8px;">
+          <input type="text" id="settings-bizaddress-line2-input" placeholder="Town / City">
         </div>
         <div class="effective-date-row">
           <span class="form-hint">Effective from (only used if the address changed)</span>
@@ -1041,7 +1046,22 @@ h3 {
       <div class="form-group">
         <div class="label">Bank details (for invoice payment instructions)</div>
         <input type="text" id="settings-bank-name-input" placeholder="Account name" style="margin-bottom:8px;">
-        <input type="text" id="settings-bank-sortcode-input" placeholder="Sort code, e.g. 12-34-56" style="margin-bottom:8px;">
+        <div class="row" style="gap:6px;align-items:center;margin-bottom:8px;">
+          <input type="text" id="settings-bank-sortcode-1" inputmode="numeric" pattern="[0-9]*" maxlength="2"
+                 style="width:44px;text-align:center;" placeholder="00"
+                 oninput="sortCodeBoxInput(this,'settings-bank-sortcode-2')">
+          <span style="opacity:.6;">–</span>
+          <input type="text" id="settings-bank-sortcode-2" inputmode="numeric" pattern="[0-9]*" maxlength="2"
+                 style="width:44px;text-align:center;" placeholder="00"
+                 oninput="sortCodeBoxInput(this,'settings-bank-sortcode-3')"
+                 onkeydown="sortCodeBoxBackspace(event,'settings-bank-sortcode-1')">
+          <span style="opacity:.6;">–</span>
+          <input type="text" id="settings-bank-sortcode-3" inputmode="numeric" pattern="[0-9]*" maxlength="2"
+                 style="width:44px;text-align:center;" placeholder="00"
+                 oninput="sortCodeBoxInput(this,null)"
+                 onkeydown="sortCodeBoxBackspace(event,'settings-bank-sortcode-2')">
+          <span class="form-hint" style="margin-left:4px;">Sort code</span>
+        </div>
         <input type="text" id="settings-bank-accountnumber-input" placeholder="Account number">
         <div class="effective-date-row">
           <span class="form-hint">Effective from (only used if the details changed)</span>
@@ -1077,12 +1097,13 @@ h3 {
       <div class="form-hint" style="margin-bottom:10px;">Used as the start and end point for mileage calculations.</div>
       <div class="form-group">
         <div class="row" style="gap:8px;">
-          <input type="text" id="settings-home-postcode-input" placeholder="Postcode, e.g. BN1 1AA" style="flex:1;">
-          <button type="button" class="btn btn-secondary" style="padding:12px 14px;" onclick="lookupPostcodeForSettings('home')">Look up</button>
+          <input type="text" id="settings-home-postcode-input" placeholder="Postcode, e.g. BN1 1AA" style="flex:1;" oninput="resetAddressLookup('home')">
+          <button type="button" class="btn btn-secondary" style="padding:12px 14px;" onclick="lookupAddressesFor('home')">Look up</button>
         </div>
         <div id="settings-home-postcode-status" class="form-hint"></div>
         <div style="margin-top:10px;">
-          <input type="text" id="settings-home-line-input" placeholder="House name/number and street">
+          <input type="text" id="settings-home-line-input" placeholder="House name/number and street" style="margin-bottom:8px;">
+          <input type="text" id="settings-home-line2-input" placeholder="Town / City">
         </div>
       </div>
       <button class="btn btn-primary" style="width:100%;" onclick="saveHomeAddress()">Save Home Address</button>
@@ -1228,12 +1249,30 @@ h3 {
     <div class="form-group">
       <div class="label">Address</div>
       <div class="row" style="gap:8px;">
-        <input type="text" id="client-postcode-input" placeholder="Postcode, e.g. BN1 1AA" style="flex:1;">
-        <button type="button" class="btn btn-secondary" style="padding:12px 14px;" onclick="lookupPostcodeForClient()">Look up</button>
+        <input type="text" id="client-postcode-input" placeholder="Postcode, e.g. BN1 1AA" style="flex:1;" oninput="resetAddressLookup('client')">
+        <button type="button" class="btn btn-secondary" style="padding:12px 14px;" onclick="lookupAddressesFor('client')">Look up</button>
       </div>
       <div id="client-postcode-status" class="form-hint"></div>
       <div style="margin-top:10px;">
-        <input type="text" id="client-address-line-input" placeholder="House name/number and street">
+        <input type="text" id="client-address-line-input" placeholder="House name/number and street" style="margin-bottom:8px;">
+        <input type="text" id="client-address-line2-input" placeholder="Town / City">
+      </div>
+    </div>
+
+    <div class="divider-sm"></div>
+
+    <div class="form-group" id="client-billing-group" style="display:none;">
+      <div class="label">Billing address (invoices only)</div>
+      <div class="form-hint" style="margin-bottom:8px;">Defaults to the address above. Mileage always uses the address above, never this one, whichever is selected here.</div>
+      <div class="segmented" id="client-billing-toggle-segmented">
+        <button type="button" class="active" data-value="same" onclick="setSegmented('client-billing-toggle-segmented','same'); updateBillingAddressVisibility();">Same as address above</button>
+        <button type="button" data-value="different" onclick="setSegmented('client-billing-toggle-segmented','different'); updateBillingAddressVisibility();">Different billing address</button>
+      </div>
+      <div id="client-billing-fields" style="display:none;margin-top:10px;">
+        <input type="text" id="client-billing-line1-input" placeholder="House name/number and street" style="margin-bottom:8px;">
+        <input type="text" id="client-billing-line2-input" placeholder="Town / City" style="margin-bottom:8px;">
+        <input type="text" id="client-billing-county-input" placeholder="County" style="margin-bottom:8px;">
+        <input type="text" id="client-billing-postcode-input" placeholder="Postcode, e.g. BN1 1AA">
       </div>
     </div>
 
@@ -1971,15 +2010,108 @@ function resolveVersionedValue(history, onDate) {
 // a same-day edit takes effect immediately. Explicit dates typed into
 // the field are unaffected — they still mean "the old value held
 // through this date," as documented above.
+//
+// Same-day edge case: if the current record itself already started
+// TODAY (the record was created today, or already edited once earlier
+// today), the yesterday-fallback tries to end it a day before it even
+// began — there's no earlier "today" version to split off in that
+// case, so the edit overwrites the current record in place instead of
+// erroring. This only ever triggers when the current record's own
+// start date is today; any other date-before-start case (a genuinely
+// wrong explicit date, e.g. a typo) still raises the error below.
 function endVersionedRecord(history, endDate, newValue) {
   const current = history.find(r => r.to === null);
   if (!current) throw new Error('No current (open) record to end');
-  if (endDate < current.from) throw new Error("End date cannot be before the current record's start date");
+  if (endDate < current.from) {
+    if (current.from >= getLocalToday()) {
+      // Same-day edit (current.from === today), OR leftover data from
+      // before this was fixed, where an earlier save left the "current"
+      // record starting in the future (current.from > today) — either
+      // way there's no valid earlier version to split off, so this
+      // overwrites the record in place and pulls its start date back
+      // to today, self-healing any stale future date as it goes.
+      current.from = getLocalToday();
+      current.value = newValue;
+      return history;
+    }
+    throw new Error("End date cannot be before the current record's start date");
+  }
   current.to = endDate;
   const newFrom = addDays(endDate, 1);
   history.push({ from: newFrom, to: null, value: newValue });
   history.sort((a, b) => compareDateStr(a.from, b.from));
   return history;
+}
+
+// Self-heals corruption patterns only possible through now-fixed bugs
+// in endVersionedRecord, from edits made under earlier, buggy versions
+// of this logic. A correct history is fully contiguous: sorted by
+// `from`, each record's `to` is exactly one day before the next
+// record's `from`, and the very last one is open (to === null). Three
+// ways that can break, all fixed here in one pass:
+//   1. DUPLICATE from-dates — two records both claiming to start the
+//      same day (seen in practice: an older, stale record sitting
+//      earlier in the array with a newer, correct one right after it).
+//      Since resolveVersionedValue just returns the first match it
+//      finds, and both records technically "cover" that shared day,
+//      the STALE one silently wins every "resolve as of today" lookup
+//      — hiding the real, current value behind it with no error or
+//      visible sign anything's wrong. Keeps only the most recently
+//      added record for any given from-date (stable-sort preserves
+//      insertion order, so it's reliably the last one in that group);
+//      the rest were immediately superseded and only exist to shadow
+//      the real value.
+//   2. GAPS — gap between one record's `to` and the next's `from`
+//      leaves any date in that gap resolving to nothing at all.
+//   3. A currently-open record dated to start in the future — a live
+//      "current" record can never legitimately start after today.
+// Run at load time so a corrupted record self-heals before anything
+// ever tries to read "today" from it. Mutates the history array in
+// place (same reference, so callers already holding it see the fix)
+// and returns true if it changed anything, so the caller knows whether
+// to persist the repair back to storage.
+function repairVersionedHistory(history) {
+  if (!history || history.length === 0) return false;
+  let repaired = false;
+  const today = getLocalToday();
+
+  // Stable sort — equal `from` dates keep their original relative
+  // (insertion) order, so the most-recently-added of any duplicate
+  // group ends up last.
+  let sorted = [...history].sort((a, b) => compareDateStr(a.from, b.from));
+
+  // 1. Drop all but the last record for any duplicated from-date.
+  const seenFrom = new Set();
+  const deduped = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    if (seenFrom.has(sorted[i].from)) { repaired = true; continue; }
+    seenFrom.add(sorted[i].from);
+    deduped.unshift(sorted[i]);
+  }
+  sorted = deduped;
+
+  // 2. A currently-open record can never legitimately start in the
+  // future — pull it back to today.
+  const current = sorted.find(r => r.to === null);
+  if (current && current.from > today) {
+    current.from = today;
+    repaired = true;
+  }
+
+  // 3. Force full contiguity between every consecutive pair, and make
+  // sure the very last (latest-starting) record is the open one.
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const expectedTo = addDays(sorted[i + 1].from, -1);
+    if (sorted[i].to !== expectedTo) { sorted[i].to = expectedTo; repaired = true; }
+  }
+  const last = sorted[sorted.length - 1];
+  if (last && last.to !== null) { last.to = null; repaired = true; }
+
+  if (repaired) {
+    history.length = 0;
+    sorted.forEach(r => history.push(r));
+  }
+  return repaired;
 }
 
 // ════════════════════════════════════════════════
@@ -2588,6 +2720,9 @@ function startSummaryTour() {
       { targetId: 'summary-period-label', screen: 'summary',
         title: 'Jump to a specific period',
         body: 'Tap here to jump straight to a date, week, month, or tax year, instead of stepping one at a time with the arrows.' },
+      { targetId: 'summary-viewmode-segmented', screen: 'summary',
+        title: 'Actual vs Projected',
+        body: '\u2018Actual\u2019 only counts appointments that have already happened \u2014 so a period that\u2019s partly in the future will look lower than expected. \u2018Projected\u2019 counts everything scheduled in the period, happened or not, which is the fuller picture for a period you\u2019re still partway through. This affects Revenue, Total Cash Revenue, Total Revenue inc. Cash, Mileage, and Profit \u2014 Costs and Salary are always actual, since those are logged entries rather than scheduled appointments.' },
       { targetId: 'summary-metrics', screen: 'summary',
         title: 'Cash is tracked separately',
         body: 'Revenue and Profit never include cash-paying clients \u2014 see Total Cash Revenue and Total Revenue inc. Cash for the full picture.' },
@@ -2644,6 +2779,11 @@ let _editingClientId = null; // null while the Add-Client modal is open
 
 async function loadClients() {
   appState.clients = await dbGetAll('clients');
+  for (const client of appState.clients) {
+    if (repairVersionedHistory(client.profileHistory)) {
+      await dbPut('clients', client);
+    }
+  }
 }
 
 // ════════════════════════════════════════════════
@@ -2674,7 +2814,7 @@ function clientCurrentAddress(client) {
 
 function formatAddressSummary(addr) {
   if (!addr) return 'No address on file';
-  return [addr.line1, addr.postcode].filter(Boolean).join(', ');
+  return [addr.line1, addr.line2, addr.postcode].filter(Boolean).join(', ');
 }
 
 function renderClients() {
@@ -2725,15 +2865,34 @@ function escapeHtml(str) {
 function updateVendorFieldVisibility() {
   const isCommercial = getSegmented('client-type-segmented') === 'commercial';
   document.getElementById('client-vendor-group').style.display = isCommercial ? 'block' : 'none';
+  document.getElementById('client-billing-group').style.display = isCommercial ? 'block' : 'none';
+}
+
+// Shows/hides the four free-text billing fields based on the Same/
+// Different toggle — independent of client type (that's handled by
+// updateVendorFieldVisibility, which hides the whole section for
+// domestic clients).
+function updateBillingAddressVisibility() {
+  const useDifferent = getSegmented('client-billing-toggle-segmented') === 'different';
+  document.getElementById('client-billing-fields').style.display = useDifferent ? 'block' : 'none';
 }
 
 // Opens the Add/Edit modal. id === null → blank form for a new client.
 function openClientModal(id) {
   _editingClientId = id;
-  const today = getLocalToday();
-  document.getElementById('client-effective-date').value = today;
+  // Left blank, not pre-filled with today — saveClient() treats a blank
+  // effective date as "yesterday", so the change takes effect today.
+  // Pre-filling this with today (as it used to) meant every same-day
+  // edit silently closed the current record AT today and opened the
+  // new one starting TOMORROW — the edit would appear to save with no
+  // error, but reopening the same client immediately would still show
+  // the pre-edit values, since "today" was still resolving to the old
+  // record. This bit the billing-address toggle specifically (it
+  // looked like it "saved but didn't"), but affected every client field.
+  document.getElementById('client-effective-date').value = '';
   document.getElementById('client-card-history').style.display = 'none';
   document.getElementById('client-postcode-status').textContent = '';
+  resetAddressLookup('client');
   document.getElementById('client-active-group').style.display = id ? 'block' : 'none';
   document.getElementById('client-effective-date-group').style.display = id ? 'block' : 'none';
 
@@ -2754,6 +2913,15 @@ function openClientModal(id) {
     const addr = snap.address;
     document.getElementById('client-postcode-input').value = addr ? (addr.postcode || '') : '';
     document.getElementById('client-address-line-input').value = addr ? (addr.line1 || '') : '';
+    document.getElementById('client-address-line2-input').value = addr ? (addr.line2 || '') : '';
+
+    const billing = snap.billingAddress;
+    setSegmented('client-billing-toggle-segmented', billing ? 'different' : 'same');
+    document.getElementById('client-billing-line1-input').value = billing ? (billing.line1 || '') : '';
+    document.getElementById('client-billing-line2-input').value = billing ? (billing.line2 || '') : '';
+    document.getElementById('client-billing-county-input').value = billing ? (billing.county || '') : '';
+    document.getElementById('client-billing-postcode-input').value = billing ? (billing.postcode || '') : '';
+    updateBillingAddressVisibility();
 
     document.getElementById('client-rate-input').value = (snap.hourlyRate === null || snap.hourlyRate === undefined) ? '' : snap.hourlyRate;
 
@@ -2769,6 +2937,13 @@ function openClientModal(id) {
     document.getElementById('client-phone-input').value = '';
     document.getElementById('client-postcode-input').value = '';
     document.getElementById('client-address-line-input').value = '';
+    document.getElementById('client-address-line2-input').value = '';
+    setSegmented('client-billing-toggle-segmented', 'same');
+    document.getElementById('client-billing-line1-input').value = '';
+    document.getElementById('client-billing-line2-input').value = '';
+    document.getElementById('client-billing-county-input').value = '';
+    document.getElementById('client-billing-postcode-input').value = '';
+    updateBillingAddressVisibility();
     document.getElementById('client-rate-input').value = '';
     setSegmented('client-payment-segmented', 'bank_transfer');
     setSegmented('client-invoiced-segmented', 'yes');
@@ -2787,27 +2962,41 @@ function renderHistoryList(containerId, history, formatValue) {
   ).join('');
 }
 
-// ── Postcode lookup ──────────────────────────────────────────────
-// Uses postcodes.io (free, unlimited, no API key) to validate the
-// postcode and geocode it to a lat/lng. postcodes.io does not return a
-// full premium address list the way getAddress.io/ideal-postcodes do,
-// so the house name/number and street are entered as free text — this
-// is effectively always the spec's "address not found" fallback path,
-// which is an intentional build-time call given no paid API key is
-// configured. Swapping in a premium provider only requires replacing
-// this one function; nothing else in the app depends on which provider
-// supplied the address.
-async function lookupPostcodeForClient() {
-  const input = document.getElementById('client-postcode-input');
-  const statusEl = document.getElementById('client-postcode-status');
-  const postcode = input.value.trim();
+// ── Address lookup ───────────────────────────────────────────────
+// ── Address lookup ───────────────────────────────────────────────
+// postcodes.io only (free, unlimited, no API key) — validates the
+// postcode, geocodes it to a lat/lng, and supplies the district/region
+// used to auto-fill Town/City. It doesn't return a full per-building
+// address list (no premium PAF data), so the house name/number and
+// street are always typed by hand below. ORS is used elsewhere in the
+// app for mileage routing only, not for address lookup.
+const ADDRESS_FIELD_CONFIG = {
+  client: { postcodeInput: 'client-postcode-input', statusEl: 'client-postcode-status',
+    line1Input: 'client-address-line-input', line2Input: 'client-address-line2-input' },
+  bizaddress: { postcodeInput: 'settings-bizaddress-postcode-input', statusEl: 'settings-bizaddress-postcode-status',
+    line1Input: 'settings-bizaddress-line-input', line2Input: 'settings-bizaddress-line2-input' },
+  home: { postcodeInput: 'settings-home-postcode-input', statusEl: 'settings-home-postcode-status',
+    line1Input: 'settings-home-line-input', line2Input: 'settings-home-line2-input' },
+};
+
+// No-op kept so existing call sites (postcode oninput handlers, modal/
+// settings open) don't need touching — there's no dropdown/pick state
+// to clear now that lookup is postcode.io-only.
+function resetAddressLookup(key) {}
+
+async function lookupAddressesFor(key) {
+  const cfg = ADDRESS_FIELD_CONFIG[key];
+  const postcodeInput = document.getElementById(cfg.postcodeInput);
+  const statusEl = document.getElementById(cfg.statusEl);
+  const postcode = postcodeInput.value.trim();
   if (!postcode) { statusEl.textContent = 'Enter a postcode first.'; return; }
   statusEl.textContent = 'Looking up…';
   try {
     const result = await geocodePostcode(postcode);
     if (result) {
-      input.value = result.postcode;
-      statusEl.textContent = `Found: ${result.postcode} (${result.district || result.region || 'UK'}) — you can now enter the house name/number and street below.`;
+      postcodeInput.value = result.postcode;
+      document.getElementById(cfg.line2Input).value = result.district || result.region || '';
+      statusEl.textContent = `Found: ${result.postcode} (${result.district || result.region || 'UK'}) — enter the house name/number and street below.`;
     } else {
       statusEl.textContent = "Postcode not found — double-check it, or enter the full address manually below and it'll still save fine.";
     }
@@ -2816,7 +3005,86 @@ async function lookupPostcodeForClient() {
   }
 }
 
-// Returns { postcode, lat, lng, district, region } or null if not found.
+// ── Address text formatting (spec: title-case every word, expand
+// common street-type abbreviations — with or without a trailing full
+// stop — to their full word). Applied at save time to whatever ended
+// up in the line1 field, whether picked from the dropdown or typed by
+// hand, so both paths save in the same normalised form.
+const STREET_ABBREVIATIONS = {
+  rd: 'Road', st: 'Street', ave: 'Avenue', av: 'Avenue', ln: 'Lane',
+  dr: 'Drive', drv: 'Drive', ct: 'Court', crt: 'Court', pl: 'Place',
+  sq: 'Square', cl: 'Close', gdns: 'Gardens', gdn: 'Garden', gr: 'Grove',
+  grv: 'Grove', cres: 'Crescent', cresc: 'Crescent', ter: 'Terrace',
+  terr: 'Terrace', pk: 'Park', mnr: 'Manor', wlk: 'Walk', blvd: 'Boulevard',
+  hwy: 'Highway', mt: 'Mount', pde: 'Parade', cir: 'Circus', cirs: 'Circus',
+  vw: 'View', hts: 'Heights', mws: 'Mews',
+};
+
+function titleCaseWord(word) {
+  const parts = word.split(/([-'])/);
+  let out = '';
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (part === '-') { out += part; continue; }
+    if (part === '\'') { out += part; continue; }
+    if (part === '') continue;
+    if (parts[i - 1] === '\'') {
+      // After an apostrophe: capitalize only for a short name-prefix
+      // like O'Brien/D'Angelo (a single letter before the apostrophe) —
+      // a plain possessive ('s) stays lowercase, e.g. "James's Close".
+      const isNamePrefix = (parts[i - 2] || '').length === 1;
+      out += isNamePrefix ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : part.toLowerCase();
+    } else {
+      out += part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    }
+  }
+  return out;
+}
+
+function formatAddressLine(raw) {
+  if (!raw) return raw;
+  const words = raw.trim().split(/\s+/).filter(Boolean);
+  const out = words.map((word, i) => {
+    const trailingComma = /,$/.test(word) ? ',' : '';
+    const core = word.replace(/[.,]+$/, '');
+    if (core.length === 0) return word;
+    const key = core.toLowerCase();
+    const isLast = i === words.length - 1;
+    if (key === 'st') {
+      // "St" is genuinely ambiguous (Street vs Saint). Expanding it
+      // wherever it appears would turn "St Peter's Close" into
+      // "Street Peter's Close" — so it's only expanded as the final
+      // word (the overwhelmingly common "...Road/...Street" pattern);
+      // mid-line "St" is left as a capitalised "St", almost always Saint.
+      return (isLast ? 'Street' : titleCaseWord(core)) + trailingComma;
+    }
+    if (STREET_ABBREVIATIONS[key]) return STREET_ABBREVIATIONS[key] + trailingComma;
+    return titleCaseWord(core) + trailingComma;
+  });
+  return out.join(' ');
+}
+
+// Generic multi-word title-case with no street-abbreviation expansion —
+// for text that's never a street line (a bank account name, a county),
+// where turning "Rd" into "Road" would never be correct. Reuses
+// titleCaseWord's apostrophe handling for consistency.
+function titleCaseText(raw) {
+  if (!raw) return raw;
+  return raw.trim().split(/\s+/).map(titleCaseWord).join(' ');
+}
+
+// Uppercases and correctly spaces a UK postcode typed as free text (no
+// geocoding involved, so no provider to normalise it for us) — e.g.
+// "sw1a1aa" -> "SW1A 1AA". Leaves anything too short to safely split
+// exactly as typed rather than guessing wrong.
+function formatPostcodeText(raw) {
+  if (!raw) return raw;
+  const compact = raw.replace(/\s+/g, '').toUpperCase();
+  if (compact.length < 5) return compact;
+  return compact.slice(0, -3) + ' ' + compact.slice(-3);
+}
+
+
 // Isolated so it's the only thing that needs to change if a premium
 // provider (getAddress.io / ideal-postcodes) is wired in later.
 async function geocodePostcode(rawPostcode) {
@@ -2843,7 +3111,23 @@ async function saveClient() {
   const isInvoiced = getSegmented('client-invoiced-segmented') === 'yes';
 
   const newPostcode = document.getElementById('client-postcode-input').value.trim();
-  const newLine1 = document.getElementById('client-address-line-input').value.trim();
+  const newLine1 = formatAddressLine(document.getElementById('client-address-line-input').value.trim());
+  const newLine2 = formatAddressLine(document.getElementById('client-address-line2-input').value.trim());
+
+  // Billing address: commercial-only, free text (no lookup/geocoding —
+  // it's never used for mileage, only printed on invoices), and only
+  // actually stored if the toggle is set to "Different" AND at least
+  // one field has something in it — an empty object would otherwise
+  // still count as "present" and silently blank out the invoice address.
+  const billingToggle = getSegmented('client-billing-toggle-segmented');
+  const rawBillingAddress = (clientType === 'commercial' && billingToggle === 'different') ? {
+    line1: formatAddressLine(document.getElementById('client-billing-line1-input').value.trim()),
+    line2: formatAddressLine(document.getElementById('client-billing-line2-input').value.trim()),
+    county: formatAddressLine(document.getElementById('client-billing-county-input').value.trim()),
+    postcode: formatPostcodeText(document.getElementById('client-billing-postcode-input').value.trim()),
+  } : null;
+  const newBillingAddress = (rawBillingAddress && (rawBillingAddress.line1 || rawBillingAddress.line2 || rawBillingAddress.county || rawBillingAddress.postcode))
+    ? rawBillingAddress : null;
 
   const rateRaw = document.getElementById('client-rate-input').value;
   if (rateRaw === '') { alert('Please enter an hourly rate (0 is fine for family/friends).'); return; }
@@ -2858,12 +3142,15 @@ async function saveClient() {
     const currentSnap = clientCurrentSnapshot(client) || {};
     const active = getSegmented('client-active-segmented') === 'active';
     const currentAddr = currentSnap.address;
-    const addrChanged = !currentAddr || currentAddr.postcode !== newPostcode || currentAddr.line1 !== newLine1;
-    const newAddr = addrChanged ? await buildAddressValue(newPostcode, newLine1, currentAddr) : currentAddr;
+    const addrChanged = !currentAddr || currentAddr.postcode !== newPostcode || currentAddr.line1 !== newLine1 || currentAddr.line2 !== newLine2;
+    const newAddr = addrChanged ? await buildAddressValue(newPostcode, newLine1, newLine2, currentAddr) : currentAddr;
+
+    const currentBillingAddress = currentSnap.billingAddress || null;
+    const billingChanged = JSON.stringify(currentBillingAddress) !== JSON.stringify(newBillingAddress);
 
     const newSnap = {
       name, clientType, vendorNumber, preferredContactMethod, email, phone,
-      address: newAddr, hourlyRate: newRate, paymentMethod, isInvoiced, active,
+      address: newAddr, billingAddress: newBillingAddress, hourlyRate: newRate, paymentMethod, isInvoiced, active,
     };
 
     // The whole card is one snapshot — if ANY field changed, version the
@@ -2872,6 +3159,7 @@ async function saveClient() {
     // payment-method change from cash only excludes future occurrences).
     const changed = Object.keys(newSnap).some(k => {
       if (k === 'address') return addrChanged;
+      if (k === 'billingAddress') return billingChanged;
       return currentSnap[k] !== newSnap[k];
     });
     if (changed) {
@@ -2881,13 +3169,13 @@ async function saveClient() {
 
     await dbPut('clients', client);
   } else {
-    const newAddr = await buildAddressValue(newPostcode, newLine1, null);
+    const newAddr = await buildAddressValue(newPostcode, newLine1, newLine2, null);
     const client = {
       id: uuid(),
       profileHistory: createInitialVersionedHistory({
         name, clientType, vendorNumber, preferredContactMethod, email, phone,
-        address: newAddr, hourlyRate: newRate, paymentMethod, isInvoiced, active: true,
-      }, effectiveDate || today),
+        address: newAddr, billingAddress: newBillingAddress, hourlyRate: newRate, paymentMethod, isInvoiced, active: true,
+      }, today), // new clients always start today — the effective-date field is hidden entirely for new clients, and is irrelevant to creation
     };
     appState.clients.push(client);
     await dbPut('clients', client);
@@ -2899,23 +3187,24 @@ async function saveClient() {
 
 // Builds an address value, geocoding only if the postcode text is new/
 // changed since the last save (per spec 2.3/2.4 — geocode on save, only
-// re-run if the address has actually changed).
-async function buildAddressValue(postcode, line1, previousAddr) {
-  if (!postcode) return { line1, postcode: '', lat: null, lng: null, manual: true };
+// re-run if the address has actually changed). line2 (Town/City) is a
+// plain user-editable field, not something geocoding resolves — it's
+// always saved exactly as typed, regardless of which branch runs below.
+async function buildAddressValue(postcode, line1, line2, previousAddr) {
+  if (!postcode) return { line1, line2, postcode: '', lat: null, lng: null, manual: true };
   if (previousAddr && previousAddr.postcode === postcode && previousAddr.lat != null) {
-    return { line1, postcode, lat: previousAddr.lat, lng: previousAddr.lng, manual: previousAddr.manual };
+    return { line1, line2, postcode, lat: previousAddr.lat, lng: previousAddr.lng, manual: previousAddr.manual };
   }
   try {
     const geo = await geocodePostcode(postcode);
-    if (geo) return { line1, postcode: geo.postcode, lat: geo.lat, lng: geo.lng, manual: false };
-    return { line1, postcode, lat: null, lng: null, manual: true }; // not found — never blocks save
+    if (geo) return { line1, line2, postcode: geo.postcode, lat: geo.lat, lng: geo.lng, manual: false };
+    return { line1, line2, postcode, lat: null, lng: null, manual: true }; // not found — never blocks save
   } catch (e) {
-    return { line1, postcode, lat: null, lng: null, manual: true }; // lookup service unreachable — never blocks save
+    return { line1, line2, postcode, lat: null, lng: null, manual: true }; // lookup service unreachable — never blocks save
   }
 }
 
-// ════════════════════════════════════════════════
-// APPOINTMENTS / DIARY / HOME — Stage 4
+
 //
 // Week A/B is determined by counting calendar weeks (Monday-anchored)
 // between a given date's Monday and a stored reference Monday
@@ -3011,6 +3300,13 @@ async function ensureAppSettings() {
     }
     if (changed) await dbPut('settings', s);
   }
+  // Same future-dated-current-record repair as loadClients — business
+  // name/address and bank details use the identical versioning shape.
+  let repaired = false;
+  if (repairVersionedHistory(s.businessNameHistory)) repaired = true;
+  if (repairVersionedHistory(s.businessAddressHistory)) repaired = true;
+  if (repairVersionedHistory(s.bankDetailsHistory)) repaired = true;
+  if (repaired) await dbPut('settings', s);
   appState.settings = s;
 }
 
@@ -3506,6 +3802,38 @@ function openAppointmentModal(id, dateStr, refreshFn) {
   openModalEl('modal-appointment');
 }
 
+// ── Sort code input — 3 boxes of 2 digits, auto-hyphenated on save/
+// display, auto-tabbing between boxes as spec'd. Digits only; any
+// non-digit typed is stripped immediately so the 2-char maxlength
+// can't be "used up" by a stray character.
+function sortCodeBoxInput(el, nextId) {
+  el.value = el.value.replace(/\D/g, '').slice(0, 2);
+  if (el.value.length === 2 && nextId) document.getElementById(nextId).focus();
+}
+function sortCodeBoxBackspace(evt, prevId) {
+  if (evt.key === 'Backspace' && evt.target.value === '' && prevId) {
+    const prev = document.getElementById(prevId);
+    prev.focus();
+    prev.value = prev.value.slice(0, -1);
+  }
+}
+// Combines the 3 boxes into "12-34-56" (only the parts actually filled
+// in — never pads with zeros), used wherever the old single-field
+// value was read.
+function getSortCodeInputValue() {
+  const parts = ['settings-bank-sortcode-1', 'settings-bank-sortcode-2', 'settings-bank-sortcode-3']
+    .map(id => document.getElementById(id).value.trim())
+    .filter(Boolean);
+  return parts.join('-');
+}
+// Splits a stored "12-34-56" (or 6 bare digits, for older saved data)
+// back into the 3 boxes.
+function setSortCodeInputValue(value) {
+  const digits = (value || '').replace(/\D/g, '');
+  const boxes = ['settings-bank-sortcode-1', 'settings-bank-sortcode-2', 'settings-bank-sortcode-3'];
+  boxes.forEach((id, i) => { document.getElementById(id).value = digits.slice(i * 2, i * 2 + 2); });
+}
+
 function saveAppointment() {
   const ctxDate = _apptModalCtx.date;
   const refresh = _apptModalCtx.refresh;
@@ -3574,13 +3902,14 @@ function deleteAppointment() {
   const ctxDate = _apptModalCtx.date;
   const refresh = _apptModalCtx.refresh;
   if (appt.type === 'template') {
+    const effDate = document.getElementById('appt-effective-date').value || ctxDate;
     showConfirm('Delete this recurring slot? It will stop from this date onward — past occurrences stay in history.', () => {
-      if (appt.effectiveFrom === ctxDate) {
+      if (appt.effectiveFrom === effDate) {
         // Never actually occurred before being deleted — safe to remove outright.
         appState.appointments = appState.appointments.filter(a => a.id !== appt.id);
         dbDelete('appointments', appt.id).then(() => { closeModal('modal-appointment'); refresh(); });
       } else {
-        appt.effectiveTo = addDays(ctxDate, -1);
+        appt.effectiveTo = addDays(effDate, -1);
         persistAppointments([appt.id]).then(() => { closeModal('modal-appointment'); refresh(); });
       }
     });
@@ -3743,7 +4072,30 @@ function nextInvoiceNumber(client, dateStr) {
   const fy = getFinancialYear(getLocalToday()).label;
   const next = (appState.settings.invoiceCounters[fy] || 0) + 1;
   appState.settings.invoiceCounters[fy] = next;
-  return `${invoiceClientLabel(client, dateStr)} - ${fy}-${String(next).padStart(3, '0')}`;
+  // fy (e.g. "2026/27") is stored here with a hyphen, not a slash — this
+  // value becomes the invoice's actual reference number, which is then
+  // used verbatim as the base of both the local saved filename and the
+  // Dropbox upload path. A raw "/" in either silently creates an extra
+  // folder rather than being part of the filename (that's what was
+  // producing a "Client Name 2026" folder + "27-001.pdf" file) — fixing
+  // it at the source here means every downstream use is automatically
+  // safe, rather than needing its own escaping.
+  return `${invoiceClientLabel(client, dateStr)} - ${fy.replace('/', '-')}-${String(next).padStart(3, '0')}`;
+}
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// The saved/shared/Dropbox-uploaded filename — always the FULL client
+// name (never the "J Smith"-style initial+surname invoice-number label,
+// domestic or commercial alike) plus the invoiced month, so a flat
+// folder of PDFs on-device is identifiable without opening each one.
+// Already slash-safe since invoice.invoiceNumber no longer contains one.
+function invoiceFilename(invoice, client) {
+  const snap = client ? clientSnapshotOn(client, invoice.statementDate) : null;
+  const name = (snap && snap.name) || 'Client';
+  const [, m] = invoice.periodKey.split('-').map(Number);
+  const monthName = MONTH_NAMES[(m || 1) - 1];
+  return `${name} - ${monthName} ${invoice.periodKey.slice(0, 4)} - ${invoice.invoiceNumber}`;
 }
 
 // ── Generate ─────────────────────────────────────────────────────────
@@ -3773,8 +4125,9 @@ async function generateInvoiceForQueueEntry(clientId, monthKey) {
   appState.invoices.push(invoice);
 
   const pdfBlob = buildInvoicePdfBlob(invoice, client);
-  await saveOrShareFile(pdfBlob, invoice.invoiceNumber.replace(/\//g, '-') + '.pdf');
-  dropboxUploadInvoice(pdfBlob, invoice); // silent, non-blocking — never delays or fails the above
+  const filename = invoiceFilename(invoice, client);
+  await saveOrShareFile(pdfBlob, filename + '.pdf');
+  dropboxUploadInvoice(pdfBlob, invoice, filename); // silent, non-blocking — never delays or fails the above
 
   renderInvoices();
 }
@@ -3803,10 +4156,23 @@ function sendInvoiceEmail(invoiceId) {
   // execution the instant it runs (confirmed in testing), so anything
   // that still needs to happen must happen first, not after.
   invoice.status = 'outstanding';
+  invoice.sentDate = getLocalToday(); // basis for the 7-day overdue flag below
   dbPut('invoices', invoice).then(() => {
     renderInvoices();
     window.location.href = `mailto:${encodeURIComponent(snap.email)}?subject=${subject}&body=${body}`;
   });
+}
+
+// An outstanding invoice is "overdue" 7+ days after it was sent —
+// matching the "Payment is due 7 days from the statement date" line
+// printed on every invoice. Uses sentDate (set the moment Send is
+// tapped); invoices sent before this field existed fall back to
+// statementDate as the closest available estimate.
+function isInvoiceOverdue(invoice) {
+  if (invoice.status !== 'outstanding') return false;
+  const sentDate = invoice.sentDate || invoice.statementDate;
+  const days = Math.floor((parseLocalDateStr(getLocalToday()) - parseLocalDateStr(sentDate)) / 86400000);
+  return days >= 7;
 }
 
 function markInvoicePaid(invoiceId) {
@@ -3816,6 +4182,21 @@ function markInvoicePaid(invoiceId) {
     await dbPut('invoices', invoice);
     renderInvoices();
   });
+}
+
+// Regenerates the exact same PDF buildInvoicePdfBlob would have
+// produced at generation time (deterministic from the stored invoice +
+// client snapshot, so it's always accurate even if the client's card
+// has since changed) and opens it in a new tab — a look-before-you-send
+// check available the moment an invoice is generated, not just at Send.
+function previewInvoice(invoiceId) {
+  const invoice = appState.invoices.find(i => i.id === invoiceId);
+  const client = appState.clients.find(c => c.id === invoice.clientId);
+  if (!invoice || !client) return;
+  const blob = buildInvoicePdfBlob(invoice, client);
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 // ── Rendering ────────────────────────────────────────────────────────
@@ -3845,15 +4226,54 @@ function renderInvoices() {
 
   const queue = getInvoiceQueue();
   const readyInvoices = appState.invoices.filter(i => i.status === 'ready').sort((a, b) => compareDateStr(b.statementDate, a.statementDate));
-  const outstanding = appState.invoices.filter(i => i.status === 'outstanding').sort((a, b) => compareDateStr(b.statementDate, a.statementDate));
+  const allOutstanding = appState.invoices.filter(i => i.status === 'outstanding');
+  const overdue = allOutstanding.filter(isInvoiceOverdue).sort((a, b) => compareDateStr((a.sentDate || a.statementDate), (b.sentDate || b.statementDate)));
+  const outstanding = allOutstanding.filter(i => !isInvoiceOverdue(i)).sort((a, b) => compareDateStr(b.statementDate, a.statementDate));
   const paid = appState.invoices.filter(i => i.status === 'paid').sort((a, b) => compareDateStr(b.statementDate, a.statementDate));
 
-  if (queue.length === 0 && readyInvoices.length === 0 && outstanding.length === 0 && paid.length === 0) {
+  if (queue.length === 0 && readyInvoices.length === 0 && overdue.length === 0 && outstanding.length === 0 && paid.length === 0) {
     bodyEl.innerHTML = `<div class="empty-state">Nothing to invoice yet.<br>Completed appointments for invoiced clients will appear here once their month wraps up.</div>`;
     return;
   }
 
   let html = '';
+
+  // ── Overdue: outstanding 7+ days since it was sent, with nothing
+  // marked as paid yet — surfaced above everything else, including
+  // Ready to Send, since these need chasing most urgently. ──
+  if (overdue.length > 0) {
+    html += `<div class="invoice-section-title">Overdue</div>`;
+    overdue.forEach((inv, idx) => {
+      const client = appState.clients.find(c => c.id === inv.clientId);
+      const clientSnap = client ? clientSnapshotOn(client, inv.statementDate) : null;
+      const key = 'inv:' + inv.id;
+      const expanded = _expandedInvoiceRows.has(key);
+      const daysOverdue = Math.floor((parseLocalDateStr(getLocalToday()) - parseLocalDateStr(inv.sentDate || inv.statementDate)) / 86400000);
+      html += `
+        <div class="invoice-row-wrap">
+          <div class="invoice-swipe-content">
+            <div class="invoice-row-header" onclick="toggleInvoiceRow('${key}')">
+              <div>
+                <div class="row-title">${escapeHtml(clientSnap ? clientSnap.name : 'Unknown client')} | ${monthLabel(inv.periodKey)}</div>
+                <div class="row-sub">${inv.invoiceNumber} · £${inv.total.toFixed(2)}</div>
+              </div>
+              <div class="invoice-row-right">
+                <span class="chip chip-red">Overdue · ${daysOverdue}d</span>
+                <svg class="invoice-chevron ${expanded ? 'expanded' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </div>
+            </div>
+            <div class="invoice-detail ${expanded ? 'open' : ''}">
+              ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
+              <div class="invoice-actions-row">
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
+                <button class="btn btn-primary" onclick="event.stopPropagation(); markInvoicePaid('${inv.id}')">Mark as Paid</button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      if (idx < overdue.length - 1) html += '<div class="divider-sm"></div>';
+    });
+  }
 
   // ── Ready to Send: queue candidates first (oldest period first), then
   // already-generated-but-unsent invoices. ──
@@ -3911,6 +4331,7 @@ function renderInvoices() {
             <div class="invoice-detail ${expanded ? 'open' : ''}">
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
               <div class="invoice-actions-row">
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
                 <button class="btn btn-primary" onclick="event.stopPropagation(); sendInvoiceEmail('${inv.id}')">Send</button>
               </div>
             </div>
@@ -3944,6 +4365,7 @@ function renderInvoices() {
             <div class="invoice-detail ${expanded ? 'open' : ''}">
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
               <div class="invoice-actions-row">
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); markInvoicePaid('${inv.id}')">Mark as Paid</button>
               </div>
             </div>
@@ -3974,7 +4396,12 @@ function renderInvoices() {
                 <svg class="invoice-chevron ${expanded ? 'expanded' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
               </div>
             </div>
-            <div class="invoice-detail ${expanded ? 'open' : ''}">${invoiceLineItemsHtml(inv.lineItems, inv.total)}</div>
+            <div class="invoice-detail ${expanded ? 'open' : ''}">
+              ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
+              <div class="invoice-actions-row">
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
+              </div>
+            </div>
           </div>
         </div>`;
       if (idx < paid.length - 1) html += '<div class="divider-sm"></div>';
@@ -4036,16 +4463,22 @@ function wireInvoiceSwipeGestures() {
 function buildInvoicePdfBlob(invoice, client) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-  const margin = 48, rightX = 547;
+  const margin = 48, rightX = 547, tableRight = margin + 430;
   let y = margin, ry = margin;
 
   const clientSnap = clientSnapshotOn(client, invoice.statementDate) || {};
-  const addr = clientSnap.address;
+  // Billing address (commercial-only, free text) takes over the "Bill
+  // To" block entirely when set — falls back to the regular address
+  // otherwise. Never affects mileage, which always reads clientSnap's
+  // regular address directly, not this.
+  const addr = clientSnap.billingAddress || clientSnap.address;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
   doc.text(clientSnap.name || '', margin, y);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
   y += 16;
   if (addr && addr.line1) { doc.text(addr.line1, margin, y); y += 14; }
+  if (addr && addr.line2) { doc.text(addr.line2, margin, y); y += 14; }
+  if (addr && addr.county) { doc.text(addr.county, margin, y); y += 14; }
   if (addr && addr.postcode) { doc.text(addr.postcode, margin, y); y += 14; }
 
   const bizName = resolveVersionedValue(appState.settings.businessNameHistory, invoice.statementDate) || 'My Dream Clean';
@@ -4065,6 +4498,7 @@ function buildInvoicePdfBlob(invoice, client) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
   }
   if (bizAddr && bizAddr.line1) { doc.text(bizAddr.line1, rightX, ry, { align: 'right' }); ry += 14; }
+  if (bizAddr && bizAddr.line2) { doc.text(bizAddr.line2, rightX, ry, { align: 'right' }); ry += 14; }
   if (bizAddr && bizAddr.postcode) { doc.text(bizAddr.postcode, rightX, ry, { align: 'right' }); ry += 14; }
   if (clientSnap.clientType === 'commercial' && clientSnap.vendorNumber) {
     doc.setFont('helvetica', 'bold');
@@ -4082,7 +4516,7 @@ function buildInvoicePdfBlob(invoice, client) {
   doc.text('Price', margin + 280, y);
   doc.text('Total', margin + 380, y);
   y += 6;
-  doc.setLineWidth(0.5); doc.line(margin, y, margin + 430, y);
+  doc.setLineWidth(0.5); doc.line(margin, y, tableRight, y);
   y += 14;
 
   doc.setFont('helvetica', 'normal');
@@ -4096,19 +4530,28 @@ function buildInvoicePdfBlob(invoice, client) {
   });
 
   y += 8;
-  doc.setLineWidth(0.5); doc.line(margin, y, margin + 430, y);
+  doc.setLineWidth(0.5); doc.line(margin, y, tableRight, y);
   y += 22;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-  doc.text('Total: £' + invoice.total.toFixed(2), margin, y);
+  // Right-aligned to the table's right edge so it sits directly under
+  // the "Total" column above, rather than back at the left margin.
+  doc.text('Total: £' + invoice.total.toFixed(2), tableRight, y, { align: 'right' });
   y += 30;
 
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  doc.text('Payment is due 7 days from the statement date.', margin, y); y += 16;
+
   const bank = resolveVersionedValue(appState.settings.bankDetailsHistory, invoice.statementDate);
-  const bankLine = (bank && bank.accountName)
-    ? `Please make payment to: ${bank.accountName}, sort code ${bank.sortCode}, account ${bank.accountNumber}.`
-    : 'Please make payment to: [bank details — add these in Settings].';
-  doc.text('Payment is due 7 days from the statement date.', margin, y); y += 12;
-  doc.text(bankLine, margin, y);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Please make payment to:', margin, y); y += 13;
+  doc.setFont('helvetica', 'normal');
+  if (bank && bank.accountName) {
+    doc.text('Account name: ' + titleCaseText(bank.accountName), margin, y); y += 13;
+    doc.text('Sort code: ' + (bank.sortCode || ''), margin, y); y += 13;
+    doc.text('Account number: ' + (bank.accountNumber || ''), margin, y);
+  } else {
+    doc.text('[Bank details — add these in Settings]', margin, y);
+  }
 
   return doc.output('blob');
 }
@@ -4240,13 +4683,13 @@ async function dropboxEnsureFreshToken() {
 // swallowed by design — the invoice is already saved locally by the
 // time this runs, so a Dropbox hiccup must never surface as an error to
 // a non-technical user mid-invoicing.
-async function dropboxUploadInvoice(blob, invoice) {
+async function dropboxUploadInvoice(blob, invoice, filename) {
   if (!dropboxIsConnected()) return;
   const ok = await dropboxEnsureFreshToken();
   if (!ok) return;
   const [, m] = invoice.periodKey.split('-');
-  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const path = `/Invoices/${invoice.financialYear.replace('/', '-')}/${m} - ${monthNames[parseInt(m, 10) - 1]}/${invoice.invoiceNumber}.pdf`;
+  const safeFilename = (filename || invoice.invoiceNumber).replace(/\//g, '-');
+  const path = `/Invoices/${invoice.financialYear.replace('/', '-')}/${m} - ${MONTH_NAMES[parseInt(m, 10) - 1]}/${safeFilename}.pdf`;
   try {
     await fetch('https://content.dropboxapi.com/2/files/upload', {
       method: 'POST',
@@ -4455,13 +4898,27 @@ function summaryGranularityChanged() {
   renderSummary();
 }
 
+// Actual (default) counts only occurred appointments — Projected counts
+// every appointment scheduled within the period, occurred or not. Toggle
+// doesn't touch the anchor date/granularity, just how the same period's
+// figures are totalled.
+function summaryViewModeChanged() {
+  renderSummary();
+}
+
 // ── Revenue / costs ──────────────────────────────────────────────────
-function getRevenueForRange(startDate, endDate) {
+// includeFuture=false (default, "Actual"): only appointments that have
+// occurred (today or earlier) count — the original behaviour, unchanged
+// for any existing caller that doesn't pass the new argument.
+// includeFuture=true ("Projected"): every appointment scheduled within
+// the range counts, occurred or not — same cash/£0-rate exclusion
+// either way via isBillableClientOnDate.
+function getRevenueForRange(startDate, endDate, includeFuture) {
   let total = 0;
   const today = getLocalToday();
   let d = startDate;
   while (compareDateStr(d, endDate) <= 0) {
-    if (!isWeekend(d) && !isHolidayDate(d) && compareDateStr(d, today) <= 0) {
+    if (!isWeekend(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
       getOccurrencesForDate(d).forEach(appt => {
         const client = appState.clients.find(c => c.id === appt.clientId);
         if (!isBillableClientOnDate(client, d)) return;
@@ -4477,12 +4934,13 @@ function getRevenueForRange(startDate, endDate) {
 // Mirrors getRevenueForRange but sums only cash-paying clients' would-be
 // earnings (rate x hours) — cash revenue is never part of the reported/
 // invoiced revenue figure above, this is purely an informational total.
-function getCashRevenueForRange(startDate, endDate) {
+// Same includeFuture flag, same default (false = actual, unchanged).
+function getCashRevenueForRange(startDate, endDate, includeFuture) {
   let total = 0;
   const today = getLocalToday();
   let d = startDate;
   while (compareDateStr(d, endDate) <= 0) {
-    if (!isWeekend(d) && !isHolidayDate(d) && compareDateStr(d, today) <= 0) {
+    if (!isWeekend(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
       getOccurrencesForDate(d).forEach(appt => {
         const client = appState.clients.find(c => c.id === appt.clientId);
         const snap = client ? clientSnapshotOn(client, d) : null;
@@ -4493,6 +4951,52 @@ function getCashRevenueForRange(startDate, endDate) {
     }
     d = addDays(d, 1);
   }
+  return Math.round(total * 100) / 100;
+}
+
+// ── New Summary callouts (unpaid / not-yet-generated invoice value) ──
+// These are independent of the Revenue/Profit figures above and don't
+// alter them — Revenue counts occurred appointments regardless of
+// invoice status, these two figures describe the invoicing pipeline.
+// Both are scoped to the page's current date range (startDate/endDate),
+// same as every other Summary figure — not all-time totals.
+
+// Sum of real invoice records not yet marked paid (status 'ready' —
+// generated but not sent — or 'outstanding' — sent, awaiting payment)
+// whose covered period (periodKey, a "YYYY-MM" month) overlaps the
+// given range at all.
+function getUnpaidInvoicesTotal(startDate, endDate) {
+  const total = (appState.invoices || [])
+    .filter(inv => inv.status === 'ready' || inv.status === 'outstanding')
+    .filter(inv => {
+      const monthStart = inv.periodKey + '-01';
+      const [y, m] = inv.periodKey.split('-').map(Number);
+      const monthEnd = `${y}-${String(m).padStart(2, '0')}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+      return compareDateStr(monthStart, endDate) <= 0 && compareDateStr(monthEnd, startDate) >= 0;
+    })
+    .reduce((s, inv) => s + inv.total, 0);
+  return Math.round(total * 100) / 100;
+}
+
+// Sum of the live "Ready to Send" queue, counting only the individual
+// completed occurrences that fall within the given range (not every
+// occurrence in the queue entry's whole month) — so a Day/Week view
+// shows just that day/week's not-yet-invoiced value, not the full
+// month's. Mirrors generateInvoiceForQueueEntry's rate resolution
+// (rate at each occurrence's own date) so the estimate matches what
+// generating would actually produce.
+function getUngeneratedInvoicesValue(startDate, endDate) {
+  const queue = getInvoiceQueue();
+  let total = 0;
+  queue.forEach(entry => {
+    const client = appState.clients.find(c => c.id === entry.clientId);
+    entry.occurred.forEach(o => {
+      if (compareDateStr(o.date, startDate) < 0 || compareDateStr(o.date, endDate) > 0) return;
+      const snap = client ? clientSnapshotOn(client, o.date) : null;
+      const rate = snap ? (snap.hourlyRate || 0) : 0;
+      total += o.hours * rate;
+    });
+  });
   return Math.round(total * 100) / 100;
 }
 
@@ -4533,8 +5037,23 @@ function billableOccurrencesOnDate(dateStr) {
   });
 }
 
-function dayRouteFingerprint(dateStr) {
+// The journey start/end point for mileage: the configured home address
+// if it has resolved coordinates, otherwise the business address as a
+// fallback — plenty of solo traders never separately fill in a home
+// address but do have a business address on file already. Home always
+// takes priority when both are set; this never affects the client-side
+// billing address feature, which is invoice-only and has no bearing on
+// mileage in either direction.
+function getMileageOriginAddress() {
   const home = appState.settings.homeAddress;
+  if (home && home.lat != null && home.lng != null) return home;
+  const bizAddr = resolveVersionedValue(appState.settings.businessAddressHistory, getLocalToday());
+  if (bizAddr && bizAddr.lat != null && bizAddr.lng != null) return bizAddr;
+  return null;
+}
+
+function dayRouteFingerprint(dateStr) {
+  const home = getMileageOriginAddress();
   const parts = [home && home.lat, home && home.lng];
   billableOccurrencesOnDate(dateStr).forEach(a => {
     const client = appState.clients.find(c => c.id === a.clientId);
@@ -4546,11 +5065,11 @@ function dayRouteFingerprint(dateStr) {
 }
 
 // Returns miles for one day (a number), or null if it genuinely
-// couldn't be computed (no home address, no API key, lookup failure) —
-// never throws, never blocks the caller.
+// couldn't be computed (no home OR business address with coordinates,
+// no API key, lookup failure) — never throws, never blocks the caller.
 async function computeDayMileage(dateStr) {
-  const home = appState.settings.homeAddress;
-  if (!home || home.lat == null || home.lng == null) return null;
+  const home = getMileageOriginAddress();
+  if (!home) return null;
   const apiKey = appState.settings.orsApiKey;
   if (!apiKey) return null;
   const occ = billableOccurrencesOnDate(dateStr);
@@ -4593,13 +5112,16 @@ async function ensureDayMileageCached(dateStr) {
 // Fast, synchronous, cache-only sum for display — never makes a network
 // call itself. allCached tells the caller whether the figure is
 // complete or still partial while background filling continues.
-function getCachedMileageForRange(startDate, endDate) {
+// includeFuture mirrors getRevenueForRange's flag: false (default) is
+// the original "occurred only" behaviour; true also sums/expects cache
+// for future scheduled days within the range (used by Projected mode).
+function getCachedMileageForRange(startDate, endDate, includeFuture) {
   const cache = appState.settings.mileageCache || {};
   let miles = 0, allCached = true;
   const today = getLocalToday();
   let d = startDate;
   while (compareDateStr(d, endDate) <= 0) {
-    if (!isWeekend(d) && !isHolidayDate(d) && compareDateStr(d, today) <= 0) {
+    if (!isWeekend(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
       const fp = dayRouteFingerprint(d);
       const cached = cache[d];
       if (cached && cached.fingerprint === fp) miles += cached.miles || 0;
@@ -4624,8 +5146,12 @@ function getCachedMileageForRange(startDate, endDate) {
 // granularity switching) — a run already in progress will naturally
 // reach any newly-requested range too, since it always starts scanning
 // from the same FY start.
+// includeFuture (default false, unchanged): when true, also computes
+// scheduled-but-not-yet-occurred days in the range — computeDayMileage
+// only depends on the recurring schedule, not on whether the date has
+// passed, so projecting forward needs no separate code path.
 let _mileageFillInFlight = false;
-async function backgroundFillMileage(startDate, endDate) {
+async function backgroundFillMileage(startDate, endDate, includeFuture) {
   if (_mileageFillInFlight) return;
   _mileageFillInFlight = true;
   try {
@@ -4633,7 +5159,7 @@ async function backgroundFillMileage(startDate, endDate) {
     const today = getLocalToday();
     let d = startDate, sinceSave = 0;
     while (compareDateStr(d, endDate) <= 0) {
-      if (!isWeekend(d) && !isHolidayDate(d) && compareDateStr(d, today) <= 0) {
+      if (!isWeekend(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
         const fp = dayRouteFingerprint(d);
         const cached = cache[d];
         if (!cached || cached.fingerprint !== fp) {
@@ -4687,58 +5213,74 @@ function renderSummary() {
   document.getElementById('summary-period-label').textContent = summaryPeriodLabel();
   document.getElementById('summary-period-sub').textContent = summaryPeriodSubLabel();
 
-  const revenue = getRevenueForRange(start, end);
-  const cashRevenue = getCashRevenueForRange(start, end);
+  const viewMode = getSegmented('summary-viewmode-segmented') || 'actual';
+  const isProjected = viewMode === 'projected';
+
+  const revenue = getRevenueForRange(start, end, isProjected);
+  const cashRevenue = getCashRevenueForRange(start, end, isProjected);
   const revenueIncCash = Math.round((revenue + cashRevenue) * 100) / 100;
   const costs = getCostsForRange(start, end);
 
-  const homeSet = appState.settings.homeAddress && appState.settings.homeAddress.lat != null;
+  const originSet = !!getMileageOriginAddress();
   const keySet = !!appState.settings.orsApiKey;
-  const mileageAvailable = homeSet && keySet;
+  const mileageAvailable = originSet && keySet;
 
   let milesInRange = 0, mileageCost = 0, mileageNote = '';
   if (mileageAvailable) {
     const fy = getFinancialYear(start);
     const fyBounds = getFinancialYearBounds(fy.startYear);
     const dayBeforeStart = addDays(start, -1);
+    // Miles already accrued earlier in the FY are always the actual
+    // figure (they've genuinely happened, or not, regardless of which
+    // toggle the period itself is viewed under) — only the period's
+    // own range respects the Actual/Projected toggle.
     const beforeRes = compareDateStr(dayBeforeStart, fyBounds.start) >= 0
       ? getCachedMileageForRange(fyBounds.start, dayBeforeStart)
       : { miles: 0, allCached: true };
-    const rangeRes = getCachedMileageForRange(start, end);
+    const rangeRes = getCachedMileageForRange(start, end, isProjected);
     milesInRange = rangeRes.miles;
     mileageCost = tieredMileageCost(beforeRes.miles, milesInRange);
     if (!beforeRes.allCached || !rangeRes.allCached) {
-      mileageNote = 'Still calculating mileage for some days — figures will update shortly.';
-      backgroundFillMileage(fyBounds.start, end);
+      mileageNote = isProjected
+        ? 'Still calculating projected mileage for some days — figures will update shortly.'
+        : 'Still calculating mileage for some days — figures will update shortly.';
+      backgroundFillMileage(fyBounds.start, end, isProjected);
     }
   } else {
-    mileageNote = 'Add a home address and OpenRouteService key in Settings to enable mileage.';
+    mileageNote = 'Add a home or business address (with a valid postcode) and an OpenRouteService key in Settings to enable mileage.';
   }
 
   const salaryCost = getSalaryForRange(start, end);
   const profit = Math.round((revenue - costs - mileageCost - salaryCost) * 100) / 100;
 
+  const unpaidInvoicesTotal = getUnpaidInvoicesTotal(start, end);
+  const ungeneratedInvoicesValue = getUngeneratedInvoicesValue(start, end);
+
+  const projSuffix = isProjected ? ' (Projected)' : '';
+  const projSub = isProjected ? 'Includes appointments in this period that haven\u2019t happened yet' : '';
+
   document.getElementById('summary-metrics').innerHTML = `
     <div class="summary-metrics-grid">
       <div>
-        <div class="summary-metric-label">Revenue</div>
+        <div class="summary-metric-label">Revenue${projSuffix}</div>
         <div class="summary-metric-value">£${revenue.toFixed(2)}</div>
+        ${projSub ? `<div class="summary-metric-sub">${projSub}</div>` : ''}
       </div>
       <div>
         <div class="summary-metric-label">Costs</div>
         <div class="summary-metric-value">£${costs.toFixed(2)}</div>
       </div>
       <div>
-        <div class="summary-metric-label">Total Cash Revenue</div>
+        <div class="summary-metric-label">Total Cash Revenue${projSuffix}</div>
         <div class="summary-metric-value">£${cashRevenue.toFixed(2)}</div>
         <div class="summary-metric-sub">Not included in Revenue or Profit above</div>
       </div>
       <div>
-        <div class="summary-metric-label">Total Revenue inc. Cash</div>
+        <div class="summary-metric-label">Total Revenue inc. Cash${projSuffix}</div>
         <div class="summary-metric-value">£${revenueIncCash.toFixed(2)}</div>
       </div>
       <div>
-        <div class="summary-metric-label">Mileage</div>
+        <div class="summary-metric-label">Mileage${projSuffix}</div>
         <div class="summary-metric-value">${mileageAvailable ? formatMiles(milesInRange) : '—'}</div>
         <div class="summary-metric-sub">${mileageAvailable ? '£' + mileageCost.toFixed(2) + ' allowance' : ''}</div>
       </div>
@@ -4747,9 +5289,19 @@ function renderSummary() {
         <div class="summary-metric-value">£${salaryCost.toFixed(2)}</div>
       </div>
       <div>
-        <div class="summary-metric-label">Profit (est.)</div>
+        <div class="summary-metric-label">Profit (est.)${projSuffix}</div>
         <div class="summary-metric-value ${profit >= 0 ? 'profit-positive' : 'profit-negative'}">${formatSignedCurrency(profit)}</div>
         <div class="summary-metric-sub">Rough estimate, not a tax figure</div>
+      </div>
+      <div>
+        <div class="summary-metric-label">Unpaid Invoices</div>
+        <div class="summary-metric-value">£${unpaidInvoicesTotal.toFixed(2)}</div>
+        <div class="summary-metric-sub">Generated but not yet paid, for this period</div>
+      </div>
+      <div>
+        <div class="summary-metric-label">Not Yet Invoiced</div>
+        <div class="summary-metric-value">£${ungeneratedInvoicesValue.toFixed(2)}</div>
+        <div class="summary-metric-sub">Completed work in this period waiting to be generated</div>
       </div>
       ${mileageNote ? `<div class="summary-mileage-note">${mileageNote}</div>` : ''}
     </div>`;
@@ -4818,13 +5370,15 @@ function renderSettings() {
   const bizAddr = resolveVersionedValue(s.businessAddressHistory, today);
   document.getElementById('settings-bizaddress-postcode-input').value = bizAddr ? (bizAddr.postcode || '') : '';
   document.getElementById('settings-bizaddress-line-input').value = bizAddr ? (bizAddr.line1 || '') : '';
+  document.getElementById('settings-bizaddress-line2-input').value = bizAddr ? (bizAddr.line2 || '') : '';
   document.getElementById('settings-bizaddress-effective-date').value = '';
   document.getElementById('settings-bizaddress-postcode-status').textContent = '';
+  resetAddressLookup('bizaddress');
   renderHistoryList('settings-bizaddress-history', s.businessAddressHistory, v => formatAddressSummary(v));
 
   const bank = resolveVersionedValue(s.bankDetailsHistory, today);
   document.getElementById('settings-bank-name-input').value = bank ? (bank.accountName || '') : '';
-  document.getElementById('settings-bank-sortcode-input').value = bank ? (bank.sortCode || '') : '';
+  setSortCodeInputValue(bank ? (bank.sortCode || '') : '');
   document.getElementById('settings-bank-accountnumber-input').value = bank ? (bank.accountNumber || '') : '';
   document.getElementById('settings-bank-effective-date').value = '';
   renderHistoryList('settings-bank-history', s.bankDetailsHistory, v =>
@@ -4835,7 +5389,9 @@ function renderSettings() {
   // Home address (not versioned — a simple current value)
   document.getElementById('settings-home-postcode-input').value = s.homeAddress ? (s.homeAddress.postcode || '') : '';
   document.getElementById('settings-home-line-input').value = s.homeAddress ? (s.homeAddress.line1 || '') : '';
+  document.getElementById('settings-home-line2-input').value = s.homeAddress ? (s.homeAddress.line2 || '') : '';
   document.getElementById('settings-home-postcode-status').textContent = '';
+  resetAddressLookup('home');
 
   // Mileage
   document.getElementById('settings-ors-key-input').value = s.orsApiKey || '';
@@ -4880,11 +5436,12 @@ async function saveBusinessProfile() {
   }
 
   const newPostcode = document.getElementById('settings-bizaddress-postcode-input').value.trim();
-  const newLine1 = document.getElementById('settings-bizaddress-line-input').value.trim();
+  const newLine1 = formatAddressLine(document.getElementById('settings-bizaddress-line-input').value.trim());
+  const newLine2 = formatAddressLine(document.getElementById('settings-bizaddress-line2-input').value.trim());
   const addrEffective = document.getElementById('settings-bizaddress-effective-date').value || addDays(today, -1);
   const currentAddr = resolveVersionedValue(s.businessAddressHistory, today);
-  const newAddr = await buildAddressValue(newPostcode, newLine1, currentAddr);
-  const addrChanged = !currentAddr || currentAddr.postcode !== newAddr.postcode || currentAddr.line1 !== newAddr.line1;
+  const newAddr = await buildAddressValue(newPostcode, newLine1, newLine2, currentAddr);
+  const addrChanged = !currentAddr || currentAddr.postcode !== newAddr.postcode || currentAddr.line1 !== newAddr.line1 || currentAddr.line2 !== newAddr.line2;
   if (addrChanged) {
     try { endVersionedRecord(s.businessAddressHistory, addrEffective, newAddr); }
     catch (e) { alert(e.message); return; }
@@ -4892,7 +5449,7 @@ async function saveBusinessProfile() {
 
   const bankVal = {
     accountName: document.getElementById('settings-bank-name-input').value.trim(),
-    sortCode: document.getElementById('settings-bank-sortcode-input').value.trim(),
+    sortCode: getSortCodeInputValue(),
     accountNumber: document.getElementById('settings-bank-accountnumber-input').value.trim(),
   };
   const bankEffective = document.getElementById('settings-bank-effective-date').value || addDays(today, -1);
@@ -4921,33 +5478,15 @@ function handleLogoUpload(event) {
   reader.readAsDataURL(file);
 }
 
-// ── Postcode lookup — shared core (geocodePostcode/buildAddressValue,
-// Stage 3) with the two Settings entry points (business + home
-// address) parameterised by id prefix rather than duplicated. ────────
-async function lookupPostcodeForSettings(prefix) {
-  const input = document.getElementById(`settings-${prefix}-postcode-input`);
-  const statusEl = document.getElementById(`settings-${prefix}-postcode-status`);
-  const postcode = input.value.trim();
-  if (!postcode) { statusEl.textContent = 'Enter a postcode first.'; return; }
-  statusEl.textContent = 'Looking up…';
-  try {
-    const result = await geocodePostcode(postcode);
-    if (result) {
-      input.value = result.postcode;
-      statusEl.textContent = `Found: ${result.postcode} (${result.district || result.region || 'UK'}) — you can now enter the house name/number and street below.`;
-    } else {
-      statusEl.textContent = "Postcode not found — double-check it, or enter the full address manually below and it'll still save fine.";
-    }
-  } catch (e) {
-    statusEl.textContent = "Couldn't reach the postcode lookup service — you can still enter the address manually below.";
-  }
-}
+// (Business/home address lookups now go through lookupAddressesFor,
+// shared with the client form above — see ADDRESS_FIELD_CONFIG.)
 
 async function saveHomeAddress() {
   const s = appState.settings;
   const postcode = document.getElementById('settings-home-postcode-input').value.trim();
-  const line1 = document.getElementById('settings-home-line-input').value.trim();
-  s.homeAddress = await buildAddressValue(postcode, line1, s.homeAddress);
+  const line1 = formatAddressLine(document.getElementById('settings-home-line-input').value.trim());
+  const line2 = formatAddressLine(document.getElementById('settings-home-line2-input').value.trim());
+  s.homeAddress = await buildAddressValue(postcode, line1, line2, s.homeAddress);
   await dbPut('settings', s);
   renderSettings();
   alert('Home address saved.');
@@ -5137,5 +5676,6 @@ Promise.all([loadClients(), ensureAppSettings(), loadAppointments(), loadInvoice
   if (document.getElementById('screen-settings').classList.contains('active')) renderSettings();
 });
 </script>
+
 </body>
 </html>
