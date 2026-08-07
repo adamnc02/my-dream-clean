@@ -1514,6 +1514,28 @@ h3 {
 </div>
 
 <!-- ════════════════════════════════════════
+     MODAL: SHARE EMAIL — shown the first time an invoice is shared out
+     of Ready to Send. The Web Share API can't pre-fill a "to" address
+     (see shareInvoice()), so this puts the client's email on the
+     clipboard to paste into Mail's To field once the share sheet opens.
+═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-share-email">
+  <div class="modal-sheet">
+    <div class="modal-handle-row">
+      <div class="modal-handle"></div>
+      <button class="modal-close-btn" onclick="closeModal('modal-share-email')">✕</button>
+    </div>
+    <div class="modal-title">Client's email</div>
+    <div class="form-hint" style="margin-bottom:10px;">Copied to your clipboard so you can paste it into Mail's "To" field once the share sheet opens.</div>
+    <div class="form-group">
+      <input type="text" id="share-email-address" readonly onclick="this.select()">
+    </div>
+    <div class="form-hint" id="share-email-no-email-hint" style="display:none;margin-bottom:10px;">No email address on file for this client — you can still share the PDF, just nothing to copy.</div>
+    <button class="btn btn-primary" style="width:100%;" id="share-email-copy-btn" onclick="copyEmailAndShare()">Copy Email &amp; Share</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
      MODAL: MESSAGE TEMPLATE PICKER — opened from the Message button
      above; tapping a template sends it via the sms: URI scheme.
 ═══════════════════════════════════════════ -->
@@ -4459,29 +4481,11 @@ function invoiceEmailText(invoice, snap) {
   return { subject, body };
 }
 
-function sendInvoiceEmail(invoiceId) {
-  const invoice = appState.invoices.find(i => i.id === invoiceId);
-  const client = appState.clients.find(c => c.id === invoice.clientId);
-  const snap = client ? clientSnapshotOn(client, invoice.statementDate) : null;
-  if (!snap || !snap.email) { alert('This client has no email address on file — add one on the Clients page first.'); return; }
-  const { subject, body } = invoiceEmailText(invoice, snap);
-  // Persist the status change and re-render BEFORE navigating to the
-  // mailto: link — assigning location.href can interrupt script
-  // execution the instant it runs (confirmed in testing), so anything
-  // that still needs to happen must happen first, not after.
-  invoice.status = 'outstanding';
-  invoice.sentDate = getLocalToday(); // basis for the 7-day overdue flag below
-  dbPut('invoices', invoice).then(() => {
-    renderInvoices();
-    window.location.href = `mailto:${encodeURIComponent(snap.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  });
-}
-
 // An outstanding invoice is "overdue" 7+ days after it was sent —
 // matching the "Payment is due 7 days from the statement date" line
-// printed on every invoice. Uses sentDate (set the moment Send is
-// tapped); invoices sent before this field existed fall back to
-// statementDate as the closest available estimate.
+// printed on every invoice. Uses sentDate (set the moment an invoice is
+// first shared out of Ready to Send); invoices sent before this field
+// existed fall back to statementDate as the closest available estimate.
 function isInvoiceOverdue(invoice) {
   if (invoice.status !== 'outstanding') return false;
   const sentDate = invoice.sentDate || invoice.statementDate;
@@ -4502,7 +4506,7 @@ function markInvoicePaid(invoiceId) {
 // produced at generation time (deterministic from the stored invoice +
 // client snapshot, so it's always accurate even if the client's card
 // has since changed) and opens it in a new tab — a look-before-you-send
-// check available the moment an invoice is generated, not just at Send.
+// check available the moment an invoice is generated, not just at Share.
 function previewInvoice(invoiceId) {
   const invoice = appState.invoices.find(i => i.id === invoiceId);
   const client = appState.clients.find(c => c.id === invoice.clientId);
@@ -4513,14 +4517,78 @@ function previewInvoice(invoiceId) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+// Share is now the only way an invoice goes out — there's no separate
+// Send button anymore. NOTE: the Web Share API has no concept of a "to"
+// recipient (only title/text/files are defined by the spec), and
+// mailto: can't carry an attachment, so there's no single mechanism
+// that does both. The email-copy popup below is the bridge: it puts the
+// client's email on the clipboard so it can be pasted into Mail's "To"
+// field once the share sheet's Mail option is picked, since Mail
+// already receives the PDF + subject + body via Share.
+//
+// Tapping Share for a still-'ready' invoice (i.e. the first time it's
+// shared) is what marks it sent — status -> 'outstanding', sentDate set
+// — same trigger-on-tap timing the old Send button used (there's no
+// reliable way to detect whether the person actually completed the
+// share afterward, so this mirrors the same assumption as before).
+// Re-sharing an already-sent invoice (Overdue/Outstanding/Paid rows)
+// just re-shares the PDF — no popup, no status change.
+function shareInvoice(invoiceId) {
+  const invoice = appState.invoices.find(i => i.id === invoiceId);
+  const client = appState.clients.find(c => c.id === invoice.clientId);
+  if (!invoice || !client) return;
+  if (invoice.status === 'ready') {
+    const snap = clientSnapshotOn(client, invoice.statementDate);
+    openShareEmailModal(invoiceId, snap ? snap.email : null);
+  } else {
+    doShareInvoice(invoiceId);
+  }
+}
+
+let _shareEmailContext = null; // { invoiceId } — set right before the popup opens, read (and cleared) when Copy & Share is tapped
+
+function openShareEmailModal(invoiceId, email) {
+  _shareEmailContext = { invoiceId };
+  const input = document.getElementById('share-email-address');
+  input.value = email || '';
+  document.getElementById('share-email-no-email-hint').style.display = email ? 'none' : 'block';
+  document.getElementById('share-email-copy-btn').textContent = email ? 'Copy Email & Share' : 'Share';
+  openModalEl('modal-share-email');
+}
+
+// The clipboard write is fired but NOT awaited — iOS requires
+// navigator.share() to run within the same user-gesture "activation"
+// window as the click that triggered it, and awaiting an extra async
+// call first risks that window closing before share() runs. Both still
+// happen from the same tap; this just keeps them from queuing behind
+// each other.
+function copyEmailAndShare() {
+  const ctx = _shareEmailContext;
+  _shareEmailContext = null;
+  closeModal('modal-share-email');
+  if (!ctx) return;
+  const email = document.getElementById('share-email-address').value;
+  if (email && navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(email).catch(() => {}); // best-effort — the address is still visible/selectable in the popup if this silently fails
+  }
+  markInvoiceSent(ctx.invoiceId);
+  doShareInvoice(ctx.invoiceId);
+}
+
+function markInvoiceSent(invoiceId) {
+  const invoice = appState.invoices.find(i => i.id === invoiceId);
+  if (!invoice || invoice.status !== 'ready') return;
+  invoice.status = 'outstanding';
+  invoice.sentDate = getLocalToday(); // basis for isInvoiceOverdue above
+  dbPut('invoices', invoice).then(renderInvoices);
+}
+
 // Opens the native share sheet with the invoice PDF attached and a
 // prefilled subject/body — for AirDrop, Save to Files, WhatsApp, or
-// forwarding into Mail by hand. NOTE: the Web Share API has no concept
-// of a "to" recipient, so this can never pre-fill who the email goes
-// to — that's what the separate Send button (mailto) is for. Falls
-// back to a plain download (via saveOrShareFile) on browsers without
-// share support, same fallback used elsewhere in the app.
-function shareInvoice(invoiceId) {
+// Mail (paste the copied address from the popup above into "To").
+// Falls back to a plain download (via saveOrShareFile) on browsers
+// without share support, same fallback used elsewhere in the app.
+function doShareInvoice(invoiceId) {
   const invoice = appState.invoices.find(i => i.id === invoiceId);
   const client = appState.clients.find(c => c.id === invoice.clientId);
   if (!invoice || !client) return;
@@ -4665,8 +4733,7 @@ function renderInvoices() {
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
-                <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
-                <button class="btn btn-primary" onclick="event.stopPropagation(); sendInvoiceEmail('${inv.id}')">Send</button>
+                <button class="btn btn-primary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
               </div>
             </div>
           </div>
