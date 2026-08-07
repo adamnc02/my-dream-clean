@@ -2722,10 +2722,10 @@ function startSummaryTour() {
         body: 'Tap here to jump straight to a date, week, month, or tax year, instead of stepping one at a time with the arrows.' },
       { targetId: 'summary-viewmode-segmented', screen: 'summary',
         title: 'Actual vs Projected',
-        body: '\u2018Actual\u2019 only counts appointments that have already happened \u2014 so a period that\u2019s partly in the future will look lower than expected. \u2018Projected\u2019 counts everything scheduled in the period, happened or not, which is the fuller picture for a period you\u2019re still partway through. This affects Revenue, Total Cash Revenue, Total Revenue inc. Cash, Mileage, and Profit \u2014 Costs and Salary are always actual, since those are logged entries rather than scheduled appointments.' },
+        body: '\u2018Actual\u2019 only counts appointments that have already happened \u2014 so a period that\u2019s partly in the future will look lower than expected. \u2018Projected\u2019 counts everything scheduled in the period, happened or not, which is the fuller picture for a period you\u2019re still partway through. This affects Revenue, Total Cash Revenue, Total Revenue inc. Cash, Mileage, and both Profit figures \u2014 Costs and Salary are always actual, since those are logged entries rather than scheduled appointments.' },
       { targetId: 'summary-metrics', screen: 'summary',
         title: 'Cash is tracked separately',
-        body: 'Revenue and Profit never include cash-paying clients \u2014 see Total Cash Revenue and Total Revenue inc. Cash for the full picture.' },
+        body: 'Revenue and the first Profit figure never include cash-paying clients \u2014 see Total Cash Revenue, Total Revenue inc. Cash, and Profit inc. Cash for the full picture.' },
       { targetId: 'summary-receipts-list', screen: 'summary',
         title: 'Your expense log',
         body: 'Every receipt logged for this period shows up here \u2014 tap + Add to log a new one without leaving Summary.' },
@@ -5246,7 +5246,8 @@ function renderSummary() {
   }
 
   const salaryCost = getSalaryForRange(start, end);
-  const profit = Math.round((revenue - costs - mileageCost - salaryCost) * 100) / 100;
+  const profit = Math.round((revenue - costs - salaryCost) * 100) / 100;
+  const profitIncCash = Math.round((revenueIncCash - costs - salaryCost) * 100) / 100;
 
   const unpaidInvoicesTotal = getUnpaidInvoicesTotal(start, end);
   const ungeneratedInvoicesValue = getUngeneratedInvoicesValue(start, end);
@@ -5268,7 +5269,7 @@ function renderSummary() {
       <div>
         <div class="summary-metric-label">Total Cash Revenue${projSuffix}</div>
         <div class="summary-metric-value">£${cashRevenue.toFixed(2)}</div>
-        <div class="summary-metric-sub">Not included in Revenue or Profit above</div>
+        <div class="summary-metric-sub">Not included in Revenue or Profit — see Profit inc. Cash below</div>
       </div>
       <div>
         <div class="summary-metric-label">Total Revenue inc. Cash${projSuffix}</div>
@@ -5277,16 +5278,11 @@ function renderSummary() {
       <div>
         <div class="summary-metric-label">Mileage${projSuffix}</div>
         <div class="summary-metric-value">${mileageAvailable ? formatMiles(milesInRange) : '—'}</div>
-        <div class="summary-metric-sub">${mileageAvailable ? '£' + mileageCost.toFixed(2) + ' allowance' : ''}</div>
+        <div class="summary-metric-sub">${mileageAvailable ? '£' + mileageCost.toFixed(2) + ' allowance (not included in Profit)' : ''}</div>
       </div>
       <div>
         <div class="summary-metric-label">Salary</div>
         <div class="summary-metric-value">£${salaryCost.toFixed(2)}</div>
-      </div>
-      <div>
-        <div class="summary-metric-label">Profit (est.)${projSuffix}</div>
-        <div class="summary-metric-value ${profit >= 0 ? 'profit-positive' : 'profit-negative'}">${formatSignedCurrency(profit)}</div>
-        <div class="summary-metric-sub">Rough estimate, not a tax figure</div>
       </div>
       <div>
         <div class="summary-metric-label">Unpaid Invoices</div>
@@ -5299,6 +5295,16 @@ function renderSummary() {
         <div class="summary-metric-sub">Completed work in this period waiting to be generated</div>
       </div>
       ${mileageNote ? `<div class="summary-mileage-note">${mileageNote}</div>` : ''}
+      <div>
+        <div class="summary-metric-label">Profit (est.)${projSuffix}</div>
+        <div class="summary-metric-value ${profit >= 0 ? 'profit-positive' : 'profit-negative'}">${formatSignedCurrency(profit)}</div>
+        <div class="summary-metric-sub">Rough estimate, not a tax figure</div>
+      </div>
+      <div>
+        <div class="summary-metric-label">Profit inc. Cash (est.)${projSuffix}</div>
+        <div class="summary-metric-value ${profitIncCash >= 0 ? 'profit-positive' : 'profit-negative'}">${formatSignedCurrency(profitIncCash)}</div>
+        <div class="summary-metric-sub">Rough estimate, not a tax figure</div>
+      </div>
     </div>`;
 
   renderSummaryReceipts(start, end);
