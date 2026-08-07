@@ -2,7 +2,7 @@
 
 A single-file Progressive Web App for running a solo/small cleaning business: diary planning, client management, invoicing with PDF generation, receipts, financial-year reporting, and mileage tracking — all on-device, no backend server.
 
-Built for iPhone use (added to the home screen as a PWA). Single file: `mdc-index.html`. No build step, no server — open it in a browser or host it as a static file (GitHub Pages works well).
+Built for iPhone use (added to the home screen as a PWA). Single file: `mdc-index.html`. No build step, no server — open it in a browser or host it as a static file (GitHub Pages works well). 
 
 ---
 
