@@ -666,6 +666,21 @@ h3 {
 .summary-mileage-note {
   grid-column: 1 / -1; font-size: 12px; color: var(--text3); line-height: 1.5; margin-top: -6px;
 }
+/* Mileage callout's label + manual-refresh button, top-right of that
+   tile specifically — every other callout keeps the plain .summary-metric-label. */
+.summary-metric-label-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
+.summary-metric-label-row .summary-metric-label { margin-bottom: 0; }
+.icon-btn-tiny {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 0.5px solid var(--border2); background: var(--surface2); color: var(--text3);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0; -webkit-tap-highlight-color: transparent;
+}
+.icon-btn-tiny svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn-tiny:active { opacity: 0.6; }
+.icon-btn-tiny:disabled { opacity: 0.5; }
+.icon-btn-tiny.spinning svg { animation: mdc-spin 0.9s linear infinite; }
+@keyframes mdc-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .receipt-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; cursor: pointer; }
 .receipt-row:active { opacity: 0.7; }
 
@@ -3079,6 +3094,8 @@ function escapeHtml(str) {
 // so they pick up .icon-btn-circle's colour automatically.
 const ICON_PHONE = '<svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
 const ICON_MESSAGE = '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+// Used by the Mileage callout's manual refresh button (Summary page).
+const ICON_REFRESH = '<svg viewBox="0 0 24 24"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>';
 
 function updateVendorFieldVisibility() {
   const isCommercial = getSegmented('client-type-segmented') === 'commercial';
@@ -5758,6 +5775,39 @@ async function backgroundFillMileage(startDate, endDate, includeFuture) {
   }
 }
 
+// Manual "refresh" button on the Mileage callout (Summary page). Does
+// NOT blindly resend every day — it's the exact same fingerprint-aware
+// backgroundFillMileage above, just triggered on demand rather than
+// waiting for the next render's automatic check, and scoped to
+// whatever period is currently being viewed (the whole financial year
+// if Year is selected, just that day/week/month otherwise — same
+// range the automatic check itself would use).
+//
+// If an automatic fill happens to already be running, backgroundFillMileage
+// would otherwise just silently exit (its in-flight lock only allows one
+// run at a time) — so this waits for that to finish first, then always
+// performs its own explicit pass, so tapping the button is guaranteed to
+// result in a genuine fresh check rather than sometimes doing nothing.
+let _mileageManualRefreshing = false;
+async function refreshMileageForCurrentPeriod() {
+  if (_mileageManualRefreshing) return; // ignore double-taps while already running
+  _mileageManualRefreshing = true;
+  renderSummary(); // shows the spinning state immediately
+
+  while (_mileageFillInFlight) {
+    await new Promise(resolve => setTimeout(resolve, 300));
+  }
+
+  const { start, end } = summaryPeriodBounds();
+  const isProjected = (getSegmented('summary-viewmode-segmented') || 'actual') === 'projected';
+  const fyBounds = getFinancialYearBounds(getFinancialYear(start).startYear);
+
+  await backgroundFillMileage(fyBounds.start, end, isProjected);
+
+  _mileageManualRefreshing = false;
+  renderSummary();
+}
+
 // Tiered cost for `milesInRange`, given `milesBeforeRange` already
 // accrued elsewhere in the same financial year — splits a range that
 // straddles the 10,000-mile threshold across both rates correctly,
@@ -5914,7 +5964,10 @@ function renderSummary() {
         <div class="summary-metric-value">£${formatCurrency(revenueIncCash)}</div>
       </div>
       <div>
-        <div class="summary-metric-label">Mileage${projSuffix}</div>
+        <div class="summary-metric-label-row">
+          <div class="summary-metric-label">Mileage${projSuffix}</div>
+          ${mileageAvailable ? `<button class="icon-btn-tiny ${_mileageManualRefreshing ? 'spinning' : ''}" ${_mileageManualRefreshing ? 'disabled' : ''} onclick="refreshMileageForCurrentPeriod()" aria-label="Refresh mileage">${ICON_REFRESH}</button>` : ''}
+        </div>
         <div class="summary-metric-value">${mileageAvailable ? formatMiles(milesInRange) : '—'}</div>
         <div class="summary-metric-sub">${mileageAvailable ? '£' + formatCurrency(mileageCost) + ' allowance (not included in Profit)' : ''}</div>
       </div>
