@@ -37,6 +37,8 @@
   --green: #6fbf8f;        /* paid / success */
   --on-accent-dark: #0e121c;
   --on-accent-light: #f7f9fc;
+  --week-a-color: #4a90d9;  /* Week A appointments — blue, fixed across modes */
+  --week-b-color: #5fb87a;  /* Week B appointments — green, fixed across modes */
 
   --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
@@ -510,6 +512,11 @@ h3 {
 .slot-row.readonly .slot-handle { visibility: hidden; }
 .slot-bar { width: 4px; border-radius: 2px; background: var(--accent2); flex-shrink: 0; }
 .slot-row.readonly .slot-bar { background: var(--border2); }
+/* Week A/B colour coding on Home's read-only day view — overrides the
+   muted readonly bar above so a glance at Home also shows which
+   recurring week (A/B) a day's appointments belong to. */
+.slot-row.readonly.week-a .slot-bar { background: var(--week-a-color); }
+.slot-row.readonly.week-b .slot-bar { background: var(--week-b-color); }
 .slot-content { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 
 .slot-empty {
@@ -566,6 +573,16 @@ h3 {
   cursor: grab;
 }
 .diary-chip.readonly { cursor: default; border-left-color: var(--border2); }
+.diary-chip.dragging { opacity: 0.35; }
+/* Week A/B colour coding (spec: Week A = blue, Week B = green) — applied
+   via a class on the day column (set once per rendered week) so every
+   chip and empty-slot placeholder within it picks up the same accent
+   without needing per-chip lookups. Readonly (past) chips keep the
+   muted border already defined above, taking precedence via source order. */
+.diary-day-col.week-a .diary-chip { border-left-color: var(--week-a-color); }
+.diary-day-col.week-b .diary-chip { border-left-color: var(--week-b-color); }
+.diary-day-col.week-a .diary-chip.readonly,
+.diary-day-col.week-b .diary-chip.readonly { border-left-color: var(--border2); }
 .diary-chip-name { font-size: 10.5px; font-weight: 600; color: var(--text); line-height: 1.25; word-break: break-word; }
 .diary-chip-dur { font-size: 9.5px; color: var(--text3); margin-top: 3px; }
 
@@ -579,6 +596,20 @@ h3 {
   cursor: pointer;
 }
 .diary-chip-empty:active { opacity: 0.7; }
+
+/* Drag landing-position indicator — a single shared element moved via
+   insertBefore/after to track the nearest insertion point as the user
+   drags a chip up/down within a day column. Purely visual: the actual
+   move happens in reorderOccurrencesOnDate on drop. Kept out of layout
+   (display:none) until a same-day drag is in progress. */
+.diary-drop-indicator {
+  display: none;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent2);
+  box-shadow: 0 0 0 2px rgba(var(--surface-rgb), 0.9);
+}
+.diary-drop-indicator.showing { display: block; }
 
 .monday-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; cursor: pointer; }
 .monday-row:active { opacity: 0.7; }
@@ -931,6 +962,10 @@ h3 {
           </button>
         </div>
       </div>
+      <div class="segmented" id="clients-view-segmented" style="margin-bottom:10px;">
+        <button type="button" class="active" data-value="active" onclick="setSegmented('clients-view-segmented','active'); renderClients();">Active</button>
+        <button type="button" data-value="inactive" onclick="setSegmented('clients-view-segmented','inactive'); renderClients();">Inactive</button>
+      </div>
       <div id="clients-list"></div>
     </div>
 
@@ -1090,6 +1125,15 @@ h3 {
       </div>
       <div class="form-hint" style="margin-bottom:6px;">Each entry is a fixed amount on a date — it reduces profit for whichever Summary period that date falls inside, same as a receipt.</div>
       <div id="settings-salary-list"></div>
+
+      <div class="divider"></div>
+
+      <div class="page-header" style="padding-top:0;padding-bottom:8px;">
+        <div class="label" style="margin-bottom:0;">Message Templates</div>
+        <button class="btn btn-secondary" style="padding:8px 14px;font-size:13px;" onclick="openMessageTemplateModal()">+ Add</button>
+      </div>
+      <div class="form-hint" style="margin-bottom:6px;">Used when you tap an appointment on Home and choose Message. Each is sent as "Hi [First name]," followed by the template.</div>
+      <div id="settings-message-templates-list"></div>
 
       <div class="divider"></div>
 
@@ -1417,6 +1461,92 @@ h3 {
       <div style="height:10px;"></div>
       <button class="btn btn-secondary" style="width:100%;color:var(--red);border-color:var(--red);" onclick="deleteSalaryPayment()">Delete Payment</button>
     </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     MODAL: MESSAGE TEMPLATE — add/edit a saved text template (Settings).
+     Same add/edit/delete shape as the Salary modal above.
+═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-message-template">
+  <div class="modal-sheet">
+    <div class="modal-handle-row">
+      <div class="modal-handle"></div>
+      <button class="modal-close-btn" onclick="closeModal('modal-message-template')">✕</button>
+    </div>
+    <div class="modal-title" id="message-template-modal-title">Add Message Template</div>
+
+    <div class="form-group">
+      <div class="label">Short name</div>
+      <input type="text" id="message-template-name-input" placeholder="e.g. Running late">
+    </div>
+
+    <div class="form-group">
+      <div class="label">Message</div>
+      <textarea id="message-template-body-input" rows="4" placeholder="e.g. I'm running about 15 minutes late today, sorry for the delay!"></textarea>
+      <div class="form-hint">Sent as "Hi [First name]," followed by this message.</div>
+    </div>
+
+    <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="saveMessageTemplate()">Save</button>
+    <div id="message-template-delete-btn" style="display:none;">
+      <div style="height:10px;"></div>
+      <button class="btn btn-secondary" style="width:100%;color:var(--red);border-color:var(--red);" onclick="deleteMessageTemplate()">Delete Template</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     MODAL: APPOINTMENT CONTACT — tapping an appointment on Home opens
+     this Call/Message action sheet (spec: tap-to-contact from Home).
+═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-appt-contact">
+  <div class="modal-sheet">
+    <div class="modal-handle-row">
+      <div class="modal-handle"></div>
+      <button class="modal-close-btn" onclick="closeModal('modal-appt-contact')">✕</button>
+    </div>
+    <div class="modal-title" id="appt-contact-modal-name">Client</div>
+    <div class="form-hint" id="appt-contact-no-phone" style="display:none;margin-bottom:10px;">No phone number on file for this client — add one on the Clients page.</div>
+    <button class="btn btn-primary" style="width:100%;" id="appt-contact-call-btn">📞 Call</button>
+    <div style="height:10px;"></div>
+    <button class="btn btn-secondary" style="width:100%;" id="appt-contact-message-btn">💬 Message</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     MODAL: MESSAGE TEMPLATE PICKER — opened from the Message button
+     above; tapping a template sends it via the sms: URI scheme.
+═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-message-picker">
+  <div class="modal-sheet">
+    <div class="modal-handle-row">
+      <div class="modal-handle"></div>
+      <button class="modal-close-btn" onclick="closeModal('modal-message-picker')">✕</button>
+    </div>
+    <div class="modal-title">Choose a message</div>
+    <div id="message-template-picker-list"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     MODAL: REORDER SCOPE — shown on drop when a drag-to-reorder on
+     Diary touches a recurring (template) appointment, since that
+     reorder could mean "just today" or "every future occurrence too".
+     A pure ad-hoc-only reorder skips this and applies immediately —
+     see diaryReorderTouchesTemplate().
+═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-reorder-scope">
+  <div class="modal-sheet">
+    <div class="modal-handle-row">
+      <div class="modal-handle"></div>
+    </div>
+    <div class="modal-title">Apply this reorder to…</div>
+    <div class="form-hint" style="margin-bottom:18px;">This slot is part of a recurring appointment. Should the new order apply just to today, or to this and every future occurrence?</div>
+    <button class="btn btn-primary" style="width:100%;" onclick="applyReorderScope('once')">Just this occurrence</button>
+    <div style="height:10px;"></div>
+    <button class="btn btn-secondary" style="width:100%;" onclick="applyReorderScope('future')">All future occurrences</button>
+    <div style="height:10px;"></div>
+    <button class="btn btn-secondary" style="width:100%;" onclick="closeModal('modal-reorder-scope')">Cancel</button>
   </div>
 </div>
 
@@ -2821,18 +2951,34 @@ function renderClients() {
   const listEl = document.getElementById('clients-list');
   const subEl = document.getElementById('clients-count-sub');
   const activeCount = appState.clients.filter(c => { const s = clientCurrentSnapshot(c); return s && s.active; }).length;
-  subEl.textContent = activeCount + ' active' + (appState.clients.length > activeCount ? ` · ${appState.clients.length - activeCount} inactive` : '');
+  const inactiveCount = appState.clients.length - activeCount;
+  subEl.textContent = activeCount + ' active' + (inactiveCount > 0 ? ` · ${inactiveCount} inactive` : '');
 
   if (appState.clients.length === 0) {
     listEl.innerHTML = `<div class="empty-state">No clients yet.<br>Tap "+ Add" to add your first client.</div>`;
     return;
   }
 
-  // Active clients first, then inactive; alphabetical within each group.
-  const sorted = [...appState.clients].sort((a, b) => {
+  // Active/Inactive toggle (defaults to 'active' — the segmented control
+  // isn't in the DOM until the Clients screen has rendered once, so fall
+  // back to 'active' rather than erroring on first paint).
+  const viewFilter = getSegmented('clients-view-segmented') || 'active';
+  const filtered = appState.clients.filter(c => {
+    const s = clientCurrentSnapshot(c);
+    const isActive = s ? !!s.active : false;
+    return viewFilter === 'active' ? isActive : !isActive;
+  });
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = viewFilter === 'active'
+      ? `<div class="empty-state">No active clients.</div>`
+      : `<div class="empty-state">No inactive clients.</div>`;
+    return;
+  }
+
+  // Alphabetical within the filtered set.
+  const sorted = [...filtered].sort((a, b) => {
     const snapA = clientCurrentSnapshot(a), snapB = clientCurrentSnapshot(b);
-    const activeA = snapA ? snapA.active : false, activeB = snapB ? snapB.active : false;
-    if (activeA !== activeB) return activeA ? -1 : 1;
     return (snapA ? snapA.name : '').localeCompare(snapB ? snapB.name : '');
   });
 
@@ -3375,7 +3521,17 @@ function getOccurrencesForDate(dateStr) {
     );
     occ = occ.concat(appState.appointments.filter(a => a.type === 'adhoc' && a.date === dateStr));
   }
-  return occ.sort((a, b) => (a.slotOrder || 0) - (b.slotOrder || 0));
+  return occ.sort((a, b) => effectiveSlotOrder(a, dateStr) - effectiveSlotOrder(b, dateStr));
+}
+
+// A "just this occurrence" reorder (see reorderOccurrencesOnDate) stores
+// its result in orderOverrides keyed by date, rather than changing the
+// template's own slotOrder — so it only ever affects how that one date
+// sorts, never future weeks. Ad-hoc appointments have no orderOverrides
+// and just fall back to their own slotOrder, as before.
+function effectiveSlotOrder(appt, dateStr) {
+  if (appt.orderOverrides && appt.orderOverrides[dateStr] !== undefined) return appt.orderOverrides[dateStr];
+  return appt.slotOrder || 0;
 }
 
 // ── Cash / £0-rate exclusion (spec 6.2 — a global rule, not a
@@ -3408,23 +3564,153 @@ function weekTotalHours(mondayStr) {
 }
 
 // Empty-slot count is a display heuristic, not literal slot data: it's
-// hours remaining in an assumed 8-hour day, floored — so a slot that
+// hours remaining in an assumed 10-hour day, floored — so a slot that
 // would only fit 30 minutes or less at the end of the day never shows
-// (e.g. 6.5 hrs remaining shows 6 empty slots, not 6.5 or 7).
+// (e.g. 8.5 hrs remaining shows 8 empty slots, not 8.5 or 9).
 function emptySlotCount(usedHours) {
-  return Math.max(0, Math.floor((8 - usedHours) + 1e-9));
+  return Math.max(0, Math.floor((10 - usedHours) + 1e-9));
 }
 
 function isPastDate(dateStr) { return compareDateStr(dateStr, getLocalToday()) < 0; }
+
+// ── Drag landing-position indicator ─────────────────────────────────
+// dataTransfer.getData() isn't reliably readable during dragover in all
+// browsers (only dragstart/drop) — so the drag source is tracked in a
+// plain variable set on dragstart instead, purely for showing the
+// indicator as the user drags. The actual reorder on drop still goes
+// through dataTransfer as before, so drop behaves the same even if a
+// browser refresh happens to clear this variable mid-drag.
+let _diaryDragFrom = null; // { idx, date } | null
+let _diaryDropIndicatorEl = null;
+
+function handleDiaryDragStart(idx, dateStr, event) {
+  _diaryDragFrom = { idx, date: dateStr };
+  if (event && event.currentTarget) event.currentTarget.classList.add('dragging');
+}
+
+function handleDiaryDragEnd() {
+  document.querySelectorAll('.diary-chip.dragging').forEach(el => el.classList.remove('dragging'));
+  hideDiaryDropIndicator();
+  _diaryDragFrom = null;
+}
+
+function getDiaryDropIndicatorEl() {
+  if (!_diaryDropIndicatorEl) {
+    _diaryDropIndicatorEl = document.createElement('div');
+    _diaryDropIndicatorEl.className = 'diary-drop-indicator';
+  }
+  return _diaryDropIndicatorEl;
+}
+
+function hideDiaryDropIndicator() {
+  if (_diaryDropIndicatorEl && _diaryDropIndicatorEl.parentNode) {
+    _diaryDropIndicatorEl.parentNode.removeChild(_diaryDropIndicatorEl);
+  }
+}
+
+// Returns the index the dragged chip would land BEFORE if dropped now
+// (0..chips.length, where chips.length means "after the last chip") —
+// based on comparing the cursor's Y position to each chip's vertical
+// midpoint, top to bottom.
+function diaryDragBeforeIndex(clientY, chips) {
+  for (let i = 0; i < chips.length; i++) {
+    const rect = chips[i].getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) return i;
+  }
+  return chips.length;
+}
+
+// Converts a "insert before this position" index (as returned by
+// diaryDragBeforeIndex, referring to positions in the array BEFORE the
+// dragged item is removed) into the toIdx that reorderOccurrencesOnDate
+// expects (an index in the array AFTER the dragged item is removed —
+// standard splice-based array-move semantics).
+function diaryDragToIdx(beforeIdx, fromIdx, count) {
+  if (beforeIdx >= count) return count - 1; // dropped below everything — lands at the end
+  if (beforeIdx <= fromIdx) return beforeIdx; // unaffected by the removal, since it's earlier
+  return beforeIdx - 1; // shifts down by one once the earlier dragged item is removed
+}
+
+function handleDiaryColDragOver(event, dateStr) {
+  event.preventDefault(); // required for drop to fire at all
+  const col = event.currentTarget;
+  if (!_diaryDragFrom || _diaryDragFrom.date !== dateStr || isPastDate(dateStr)) {
+    hideDiaryDropIndicator();
+    return;
+  }
+  const chips = Array.from(col.querySelectorAll('.diary-chip'));
+  const beforeIdx = diaryDragBeforeIndex(event.clientY, chips);
+  const indicator = getDiaryDropIndicatorEl();
+  indicator.classList.add('showing');
+  if (beforeIdx < chips.length) {
+    col.insertBefore(indicator, chips[beforeIdx]);
+  } else if (chips.length > 0) {
+    chips[chips.length - 1].after(indicator);
+  } else {
+    col.appendChild(indicator); // day has no other appointments to anchor against
+  }
+}
+
+function handleDiaryColDrop(event, dateStr) {
+  event.preventDefault();
+  hideDiaryDropIndicator();
+  const p = event.dataTransfer.getData('text/plain').split('|');
+  const fromIdx = parseInt(p[0]);
+  const fromDate = p[1];
+  _diaryDragFrom = null;
+  if (fromDate !== dateStr) return; // cross-day drag isn't supported — silent no-op, same as before
+  const col = event.currentTarget;
+  const chips = Array.from(col.querySelectorAll('.diary-chip'));
+  const beforeIdx = diaryDragBeforeIndex(event.clientY, chips);
+  const toIdx = diaryDragToIdx(beforeIdx, fromIdx, chips.length);
+  if (fromIdx === toIdx) return;
+  // Only recurring (template) appointments have a meaningful "just today
+  // vs every future occurrence" choice — a pure ad-hoc-only reorder has
+  // no future to affect, so it applies immediately with no prompt, same
+  // as before this feature existed.
+  if (diaryReorderTouchesTemplate(dateStr, fromIdx, toIdx)) {
+    openReorderScopeModal(dateStr, fromIdx, toIdx);
+  } else {
+    reorderOccurrencesOnDate(dateStr, fromIdx, toIdx, renderDiaryWeek, 'future');
+  }
+}
+
+// True if any appointment within the affected range (the dragged item's
+// old and new position, inclusive) is a recurring template — meaning
+// this reorder needs the once-vs-future choice rather than applying
+// straight away.
+function diaryReorderTouchesTemplate(dateStr, fromIdx, toIdx) {
+  const occ = getOccurrencesForDate(dateStr);
+  const lo = Math.min(fromIdx, toIdx), hi = Math.max(fromIdx, toIdx);
+  for (let i = lo; i <= hi; i++) { if (occ[i] && occ[i].type === 'template') return true; }
+  return false;
+}
+
+let _reorderScopeContext = null; // { dateStr, fromIdx, toIdx } — set right before the modal opens, read (and cleared) when a choice is made
+
+function openReorderScopeModal(dateStr, fromIdx, toIdx) {
+  _reorderScopeContext = { dateStr, fromIdx, toIdx };
+  openModalEl('modal-reorder-scope');
+}
+
+function applyReorderScope(scope) {
+  if (!_reorderScopeContext) return;
+  const { dateStr, fromIdx, toIdx } = _reorderScopeContext;
+  _reorderScopeContext = null;
+  closeModal('modal-reorder-scope');
+  reorderOccurrencesOnDate(dateStr, fromIdx, toIdx, renderDiaryWeek, scope);
+}
 
 // ── Shared reorder logic (vertical, within a single day) ─────────────
 // Reuses BLOC's Plan-page reorder shape (splice + reassign sequential
 // order values) but with a flat list instead of BLOC's superset-aware
 // grouping, and native HTML5 drag/drop wiring rather than its swipe
-// gestures. Reassigning order on a template appointment goes through
-// applyTemplateEditForward so a reorder — like any other edit — only
-// ever affects this date forward, never past occurrences.
-function reorderOccurrencesOnDate(dateStr, fromIdx, toIdx, refreshFn) {
+// gestures. scope controls how a reassigned template appointment's new
+// order is stored: 'future' (default) goes through applyTemplateEditForward
+// exactly as before — the change, like any other edit, only ever affects
+// this date forward. 'once' instead writes a per-date override so only
+// this single occurrence's position changes, never past OR future ones.
+function reorderOccurrencesOnDate(dateStr, fromIdx, toIdx, refreshFn, scope) {
   if (fromIdx === toIdx) return;
   if (isPastDate(dateStr)) return; // past is immutable
 
@@ -3436,11 +3722,17 @@ function reorderOccurrencesOnDate(dateStr, fromIdx, toIdx, refreshFn) {
   const touchedIds = [];
   occ.forEach((appt, i) => {
     const newOrder = i + 1;
-    if (appt.slotOrder === newOrder) return;
+    if (effectiveSlotOrder(appt, dateStr) === newOrder) return;
     if (appt.type === 'template') {
-      const updated = applyTemplateEditForward(appt, dateStr, { slotOrder: newOrder });
-      touchedIds.push(appt.id);
-      if (updated.id !== appt.id) touchedIds.push(updated.id);
+      if (scope === 'once') {
+        appt.orderOverrides = appt.orderOverrides || {};
+        appt.orderOverrides[dateStr] = newOrder;
+        touchedIds.push(appt.id);
+      } else {
+        const updated = applyTemplateEditForward(appt, dateStr, { slotOrder: newOrder });
+        touchedIds.push(appt.id);
+        if (updated.id !== appt.id) touchedIds.push(updated.id);
+      }
     } else {
       appt.slotOrder = newOrder;
       touchedIds.push(appt.id);
@@ -3455,7 +3747,8 @@ function reorderOccurrencesOnDate(dateStr, fromIdx, toIdx, refreshFn) {
 // it was split earlier today by a previous edit), it's mutated in place
 // rather than split again. Otherwise the current record is closed the
 // day before effectiveDate and a new record picks up from effectiveDate,
-// carrying forward only the cancellations that apply to it.
+// carrying forward only the cancellations and single-occurrence order
+// overrides that apply to it.
 function applyTemplateEditForward(appt, effectiveDate, changes) {
   if (appt.effectiveFrom === effectiveDate) {
     Object.assign(appt, changes);
@@ -3464,9 +3757,14 @@ function applyTemplateEditForward(appt, effectiveDate, changes) {
   const oldCancelled = (appt.cancelledDates || []).filter(d => compareDateStr(d, effectiveDate) < 0);
   const newCancelled = (appt.cancelledDates || []).filter(d => compareDateStr(d, effectiveDate) >= 0);
   appt.cancelledDates = oldCancelled;
+  const oldOverrides = {}, newOverrides = {};
+  Object.entries(appt.orderOverrides || {}).forEach(([d, v]) => {
+    (compareDateStr(d, effectiveDate) < 0 ? oldOverrides : newOverrides)[d] = v;
+  });
+  appt.orderOverrides = oldOverrides;
   appt.effectiveTo = addDays(effectiveDate, -1);
   const newAppt = Object.assign({}, appt, changes, {
-    id: uuid(), effectiveFrom: effectiveDate, effectiveTo: null, cancelledDates: newCancelled,
+    id: uuid(), effectiveFrom: effectiveDate, effectiveTo: null, cancelledDates: newCancelled, orderOverrides: newOverrides,
   });
   appState.appointments.push(newAppt);
   return newAppt;
@@ -3531,9 +3829,12 @@ function renderHome() {
   const usedHours = occurrences.reduce((s, a) => s + a.durationHours, 0);
   const monday = getMondayOfWeek(homeSelectedDate);
   totalEl.textContent = `${formatHours(usedHours)} today · ${formatHours(weekTotalHours(monday))} this week`;
+  const homeWeekLetterClass = isWeekend(homeSelectedDate) ? '' : (getWeekLetter(homeSelectedDate) === 'A' ? 'week-a' : 'week-b');
 
-  // Home is view-only — a glance at the day, not a place to plan from.
-  // No add/edit/drag here; that all lives on the Diary week grid.
+  // Home stays view-only for editing — no add/edit/drag here, that all
+  // lives on the Diary week grid — but tapping a row opens a Call/
+  // Message action sheet for that appointment's client (spec: tap-to-
+  // contact from Home).
   let html = '';
   occurrences.forEach((appt, idx) => {
     const client = appState.clients.find(c => c.id === appt.clientId);
@@ -3546,7 +3847,8 @@ function renderHome() {
     const addr = clientSnap ? clientSnap.address : null;
     const addrLabel = formatAddressSummary(addr);
     const rowMinHeight = Math.round(34 + appt.durationHours * 16); // proportional to duration
-    html += `<div class="slot-row readonly" style="min-height:${rowMinHeight}px;">
+    html += `<div class="slot-row readonly ${homeWeekLetterClass}" style="min-height:${rowMinHeight}px;cursor:${client ? 'pointer' : 'default'};"
+        ${client ? `onclick="openApptContactModal('${client.id}')"` : ''}>
       <div class="slot-bar"></div>
       <div class="slot-content">
         <div class="row-title">${escapeHtml(clientName)}</div>
@@ -3677,7 +3979,9 @@ function renderDiaryWeek() {
     weekTotal += usedHours;
     const emptyCount = (isPast || holiday) ? 0 : emptySlotCount(usedHours);
 
-    html += `<div class="diary-day-col ${isToday ? 'today' : ''} ${isPast ? 'past' : ''}">
+    html += `<div class="diary-day-col ${isToday ? 'today' : ''} ${isPast ? 'past' : ''} ${letter === 'A' ? 'week-a' : 'week-b'}"
+        ondragover="handleDiaryColDragOver(event,'${dateStr}')"
+        ondrop="handleDiaryColDrop(event,'${dateStr}')">
       <div class="diary-day-header">
         <div class="diary-day-name">${dayName}</div>
         <div class="diary-day-num">${dayNum}</div>
@@ -3693,9 +3997,8 @@ function renderDiaryWeek() {
         const chipMinHeight = Math.round(30 + appt.durationHours * 14); // proportional to duration
         html += `<div class="diary-chip ${isPast ? 'readonly' : ''}" style="min-height:${chipMinHeight}px;"
             draggable="${isPast ? 'false' : 'true'}"
-            ondragstart="event.dataTransfer.setData('text/plain','${idx}|${dateStr}')"
-            ondragover="event.preventDefault()"
-            ondrop="event.preventDefault();(function(){const p=event.dataTransfer.getData('text/plain').split('|');if(p[1]==='${dateStr}')reorderOccurrencesOnDate('${dateStr}',parseInt(p[0]),${idx},renderDiaryWeek);})()"
+            ondragstart="event.dataTransfer.setData('text/plain','${idx}|${dateStr}');handleDiaryDragStart(${idx},'${dateStr}',event)"
+            ondragend="handleDiaryDragEnd()"
             ${isPast ? '' : `onclick="openAppointmentModal('${appt.id}','${dateStr}',renderDiaryWeek)"`}>
           <div class="diary-chip-name">${escapeHtml(name)}</div>
           <div class="diary-chip-dur">${formatHoursShort(appt.durationHours)}</div>
@@ -4126,7 +4429,11 @@ async function generateInvoiceForQueueEntry(clientId, monthKey) {
 
   const pdfBlob = buildInvoicePdfBlob(invoice, client);
   const filename = invoiceFilename(invoice, client);
-  await saveOrShareFile(pdfBlob, filename + '.pdf');
+  // No share-sheet popup here anymore — on iOS this used to try (and
+  // usually fail) to save straight to Files. Dropbox archival below is
+  // silent and reliable; the Ready-to-Send row's own Share button
+  // (shareInvoice()) is where the user explicitly chooses to save/
+  // AirDrop/attach the PDF, once, when they're ready to send it.
   dropboxUploadInvoice(pdfBlob, invoice, filename); // silent, non-blocking — never delays or fails the above
 
   renderInvoices();
@@ -4141,16 +4448,23 @@ function dismissQueueEntry(clientId, monthKey) {
   });
 }
 
+// Shared subject/body wording for both the Send (mailto) flow and the
+// Share (native share-sheet) flow, so the two never drift out of sync.
+// Returns plain, unencoded text — callers encode for their own transport
+// (encodeURIComponent for mailto; navigator.share takes raw text).
+function invoiceEmailText(invoice, snap) {
+  const firstName = snap.name.trim().split(/\s+/)[0];
+  const subject = `Invoice ${invoice.invoiceNumber}`;
+  const body = `Hi ${firstName},\n\nPlease find attached invoice ${invoice.invoiceNumber} for £${invoice.total.toFixed(2)}, covering ${invoice.lineItems.length} appointment(s) in ${monthLabel(invoice.periodKey)}.\n\nPayment is due 7 days from the statement date.\n\nThanks!`;
+  return { subject, body };
+}
+
 function sendInvoiceEmail(invoiceId) {
   const invoice = appState.invoices.find(i => i.id === invoiceId);
   const client = appState.clients.find(c => c.id === invoice.clientId);
   const snap = client ? clientSnapshotOn(client, invoice.statementDate) : null;
   if (!snap || !snap.email) { alert('This client has no email address on file — add one on the Clients page first.'); return; }
-  const firstName = snap.name.trim().split(/\s+/)[0];
-  const subject = encodeURIComponent(`Invoice ${invoice.invoiceNumber}`);
-  const body = encodeURIComponent(
-    `Hi ${firstName},\n\nPlease find attached invoice ${invoice.invoiceNumber} for £${invoice.total.toFixed(2)}, covering ${invoice.lineItems.length} appointment(s) in ${monthLabel(invoice.periodKey)}.\n\nPayment is due 7 days from the statement date.\n\nThanks!`
-  );
+  const { subject, body } = invoiceEmailText(invoice, snap);
   // Persist the status change and re-render BEFORE navigating to the
   // mailto: link — assigning location.href can interrupt script
   // execution the instant it runs (confirmed in testing), so anything
@@ -4159,7 +4473,7 @@ function sendInvoiceEmail(invoiceId) {
   invoice.sentDate = getLocalToday(); // basis for the 7-day overdue flag below
   dbPut('invoices', invoice).then(() => {
     renderInvoices();
-    window.location.href = `mailto:${encodeURIComponent(snap.email)}?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:${encodeURIComponent(snap.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   });
 }
 
@@ -4197,6 +4511,24 @@ function previewInvoice(invoiceId) {
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank');
   setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// Opens the native share sheet with the invoice PDF attached and a
+// prefilled subject/body — for AirDrop, Save to Files, WhatsApp, or
+// forwarding into Mail by hand. NOTE: the Web Share API has no concept
+// of a "to" recipient, so this can never pre-fill who the email goes
+// to — that's what the separate Send button (mailto) is for. Falls
+// back to a plain download (via saveOrShareFile) on browsers without
+// share support, same fallback used elsewhere in the app.
+function shareInvoice(invoiceId) {
+  const invoice = appState.invoices.find(i => i.id === invoiceId);
+  const client = appState.clients.find(c => c.id === invoice.clientId);
+  if (!invoice || !client) return;
+  const snap = clientSnapshotOn(client, invoice.statementDate);
+  const { subject, body } = invoiceEmailText(invoice, snap || { name: 'there' });
+  const blob = buildInvoicePdfBlob(invoice, client);
+  const filename = invoiceFilename(invoice, client);
+  saveOrShareFile(blob, filename + '.pdf', { title: subject, text: body });
 }
 
 // ── Rendering ────────────────────────────────────────────────────────
@@ -4266,6 +4598,7 @@ function renderInvoices() {
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
                 <button class="btn btn-primary" onclick="event.stopPropagation(); markInvoicePaid('${inv.id}')">Mark as Paid</button>
               </div>
             </div>
@@ -4332,6 +4665,7 @@ function renderInvoices() {
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
                 <button class="btn btn-primary" onclick="event.stopPropagation(); sendInvoiceEmail('${inv.id}')">Send</button>
               </div>
             </div>
@@ -4366,6 +4700,7 @@ function renderInvoices() {
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); markInvoicePaid('${inv.id}')">Mark as Paid</button>
               </div>
             </div>
@@ -4400,6 +4735,7 @@ function renderInvoices() {
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
               </div>
             </div>
           </div>
@@ -4557,11 +4893,15 @@ function buildInvoicePdfBlob(invoice, client) {
 // direct Files-app write, no OS API for that exists otherwise. Falls
 // back to a plain download for browsers without file-sharing support
 // (desktop testing, etc.).
-async function saveOrShareFile(blob, filename) {
+async function saveOrShareFile(blob, filename, opts) {
+  const title = (opts && opts.title) || filename;
+  const text = opts && opts.text;
   try {
     const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: filename });
+      const shareData = { files: [file], title };
+      if (text) shareData.text = text; // best-effort — some share targets (notably Mail) may ignore this when a file is attached
+      await navigator.share(shareData);
       return;
     }
   } catch (e) {
@@ -5415,6 +5755,9 @@ function renderSettings() {
   // Salary
   renderSalaryList();
 
+  // Message Templates
+  renderMessageTemplatesList();
+
   // Holidays
   renderHolidaysList();
 
@@ -5629,7 +5972,131 @@ function renderSalaryList() {
   listEl.innerHTML = html;
 }
 
-// ── Full JSON backup (spec 4.6/5.6) — disaster recovery, not a sync
+// ── Message Templates — user-authored quick texts used from Home's
+// tap-to-contact action sheet (see openApptContactModal below). Same
+// add/edit/delete shape as Jenn's Salary above; lives in settings for
+// the same reason (small list, no need for its own IndexedDB store).
+let _editingMessageTemplateId = null;
+
+function openMessageTemplateModal(id) {
+  _editingMessageTemplateId = id || null;
+  const tpl = id ? (appState.settings.messageTemplates || []).find(t => t.id === id) : null;
+  document.getElementById('message-template-modal-title').textContent = tpl ? 'Edit Message Template' : 'Add Message Template';
+  document.getElementById('message-template-name-input').value = tpl ? tpl.name : '';
+  document.getElementById('message-template-body-input').value = tpl ? tpl.body : '';
+  document.getElementById('message-template-delete-btn').style.display = tpl ? 'block' : 'none';
+  openModalEl('modal-message-template');
+}
+
+async function saveMessageTemplate() {
+  const name = document.getElementById('message-template-name-input').value.trim();
+  const body = document.getElementById('message-template-body-input').value.trim();
+
+  if (!name) { alert('Please enter a short name for this template.'); return; }
+  if (!body) { alert('Please enter the message text.'); return; }
+
+  appState.settings.messageTemplates = appState.settings.messageTemplates || [];
+  if (_editingMessageTemplateId) {
+    const tpl = appState.settings.messageTemplates.find(t => t.id === _editingMessageTemplateId);
+    Object.assign(tpl, { name, body });
+  } else {
+    appState.settings.messageTemplates.push({ id: uuid(), name, body });
+  }
+  await dbPut('settings', appState.settings);
+  closeModal('modal-message-template');
+  renderMessageTemplatesList();
+}
+
+function deleteMessageTemplate() {
+  if (!_editingMessageTemplateId) return;
+  showConfirm('Delete this message template?', async () => {
+    appState.settings.messageTemplates = appState.settings.messageTemplates.filter(t => t.id !== _editingMessageTemplateId);
+    await dbPut('settings', appState.settings);
+    closeModal('modal-message-template');
+    renderMessageTemplatesList();
+  });
+}
+
+function renderMessageTemplatesList() {
+  const listEl = document.getElementById('settings-message-templates-list');
+  const templates = appState.settings.messageTemplates || [];
+  if (templates.length === 0) {
+    listEl.innerHTML = `<div class="empty-state">No message templates yet.</div>`;
+    return;
+  }
+  let html = '';
+  templates.forEach((t, idx) => {
+    html += `
+      <div class="row" onclick="openMessageTemplateModal('${t.id}')">
+        <div>
+          <div class="row-title">${escapeHtml(t.name)}</div>
+          <div class="row-sub">${escapeHtml(t.body.length > 60 ? t.body.slice(0, 60) + '…' : t.body)}</div>
+        </div>
+      </div>`;
+    if (idx < templates.length - 1) html += '<div class="divider-sm"></div>';
+  });
+  listEl.innerHTML = html;
+}
+
+// ── Home tap-to-contact (spec: tap an appointment on Home → Call or
+// Message) ───────────────────────────────────────────────────────────
+// Call launches the Phone app directly via tel:. Message opens the
+// template picker below; the chosen template is prefixed with the same
+// "Hi [First name]," greeting used on invoice emails, then handed to
+// the Messages app via the sms: URI scheme. iOS-specific separator
+// (&body=, not ?body=) — this app targets iPhone; Android would need
+// ?body= instead, per the sms: URI scheme's platform split.
+function openApptContactModal(clientId) {
+  const client = appState.clients.find(c => c.id === clientId);
+  const snap = client ? clientSnapshotOn(client, homeSelectedDate) : null;
+  if (!snap) return;
+  document.getElementById('appt-contact-modal-name').textContent = snap.name;
+  const phone = (snap.phone || '').trim();
+  const hasPhone = !!phone;
+  document.getElementById('appt-contact-no-phone').style.display = hasPhone ? 'none' : 'block';
+  const callBtn = document.getElementById('appt-contact-call-btn');
+  const msgBtn = document.getElementById('appt-contact-message-btn');
+  callBtn.style.display = hasPhone ? '' : 'none';
+  msgBtn.style.display = hasPhone ? '' : 'none';
+  callBtn.onclick = () => { closeModal('modal-appt-contact'); window.location.href = 'tel:' + phone.replace(/\s+/g, ''); };
+  msgBtn.onclick = () => { closeModal('modal-appt-contact'); openMessageTemplatePicker(snap.name, phone); };
+  openModalEl('modal-appt-contact');
+}
+
+let _messagePickerContext = null; // { clientName, phone } — set when the picker opens, read on send
+
+function openMessageTemplatePicker(clientName, phone) {
+  _messagePickerContext = { clientName, phone };
+  const listEl = document.getElementById('message-template-picker-list');
+  const templates = appState.settings.messageTemplates || [];
+  if (templates.length === 0) {
+    listEl.innerHTML = `<div class="empty-state">No message templates yet.<br>Add some in Settings.</div>`;
+  } else {
+    let html = '';
+    templates.forEach((t, idx) => {
+      html += `
+        <div class="row" onclick="sendTemplateMessage('${t.id}')">
+          <div>
+            <div class="row-title">${escapeHtml(t.name)}</div>
+            <div class="row-sub">${escapeHtml(t.body.length > 60 ? t.body.slice(0, 60) + '…' : t.body)}</div>
+          </div>
+        </div>`;
+      if (idx < templates.length - 1) html += '<div class="divider-sm"></div>';
+    });
+    listEl.innerHTML = html;
+  }
+  openModalEl('modal-message-picker');
+}
+
+function sendTemplateMessage(templateId) {
+  const tpl = (appState.settings.messageTemplates || []).find(t => t.id === templateId);
+  if (!tpl || !_messagePickerContext) return;
+  const firstName = _messagePickerContext.clientName.trim().split(/\s+/)[0];
+  const text = `Hi ${firstName},\n\n${tpl.body}`;
+  const cleanPhone = _messagePickerContext.phone.replace(/\s+/g, '');
+  closeModal('modal-message-picker');
+  window.location.href = `sms:${cleanPhone}&body=${encodeURIComponent(text)}`;
+}
 // mechanism. Exports every store verbatim; import fully replaces
 // on-device data after an explicit confirm, since this is a
 // destructive, whole-app-replacing action. ──────────────────────────
