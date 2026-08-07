@@ -5636,9 +5636,10 @@ async function ensureDayMileageCached(dateStr) {
   const cache = appState.settings.mileageCache || (appState.settings.mileageCache = {});
   const fp = dayRouteFingerprint(dateStr);
   const cached = cache[dateStr];
-  if (cached && cached.fingerprint === fp) return cached.miles;
+  if (cached && cached.fingerprint === fp && cached.miles !== null && cached.miles !== undefined) return cached.miles;
   const miles = await computeDayMileage(dateStr);
-  cache[dateStr] = { miles, fingerprint: fp };
+  if (miles !== null) cache[dateStr] = { miles, fingerprint: fp };
+  else if (cached) delete cache[dateStr];
   return miles;
 }
 
@@ -5670,10 +5671,28 @@ function getCachedMileageForRange(startDate, endDate, includeFuture) {
 // requests — a large backlog fills in gradually over a few renders/
 // revisits rather than all at once.
 // Fills every uncached day in the range, sequentially (each await
-// naturally paces the requests — no artificial batch cap needed; a
-// solo diary's full financial-year backlog is at most ~260 weekdays,
-// a one-off cost the first time mileage is enabled, not a recurring
-// one). Saves and re-renders periodically as it goes so the UI updates
+// naturally paces the requests). Two things keep this efficient:
+//
+// 1. Fingerprint reuse — dayRouteFingerprint() already encodes the
+//    exact set of appointment ids + client coordinates for a day, and
+//    a recurring template appointment keeps the SAME id on every one
+//    of its occurrences. That means two different dates with the same
+//    weekday/week-letter pattern and no changes between them produce
+//    an IDENTICAL fingerprint — so a real solo diary's ~260 weekday
+//    backlog is typically only a handful of genuinely distinct routes
+//    (one per weekday x Week A/B combination) repeated over and over.
+//    knownByFingerprint below computes each distinct route at most
+//    once per fill, then reuses that result for every other day
+//    sharing the same fingerprint — no extra API call, no network
+//    wait, just a cache write. A day only ever needs a fresh ORS call
+//    the first time ITS fingerprint is seen.
+// 2. Failed lookups are never cached as if they'd succeeded — a day
+//    that couldn't be computed (network blip, ORS rate limit, etc.)
+//    is left uncached (any stale bad entry is cleared) so it's picked
+//    up and retried on the next fill, rather than permanently locking
+//    in a wrong zero.
+//
+// Saves and re-renders periodically as it goes so the UI updates
 // progressively rather than staying blank until the entire backlog is
 // done. The in-flight lock prevents overlapping runs (e.g. rapid
 // granularity switching) — a run already in progress will naturally
@@ -5689,20 +5708,42 @@ async function backgroundFillMileage(startDate, endDate, includeFuture) {
   _mileageFillInFlight = true;
   try {
     const cache = appState.settings.mileageCache || (appState.settings.mileageCache = {});
+
+    // Seed the fingerprint->miles map from whatever's already
+    // successfully cached, so a route computed on a previous visit is
+    // reused immediately rather than recomputed here too.
+    const knownByFingerprint = new Map();
+    Object.values(cache).forEach(entry => {
+      if (entry && entry.miles !== null && entry.miles !== undefined && !knownByFingerprint.has(entry.fingerprint)) {
+        knownByFingerprint.set(entry.fingerprint, entry.miles);
+      }
+    });
+
     const today = getLocalToday();
     let d = startDate, sinceSave = 0;
     while (compareDateStr(d, endDate) <= 0) {
       if (!isWeekend(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
         const fp = dayRouteFingerprint(d);
         const cached = cache[d];
-        if (!cached || cached.fingerprint !== fp) {
-          const miles = await computeDayMileage(d);
-          cache[d] = { miles, fingerprint: fp };
-          sinceSave++;
-          if (sinceSave >= 10) {
-            await dbPut('settings', appState.settings);
-            if (document.getElementById('screen-summary').classList.contains('active')) renderSummary();
-            sinceSave = 0;
+        const alreadyGood = cached && cached.fingerprint === fp && cached.miles !== null && cached.miles !== undefined;
+        if (!alreadyGood) {
+          let miles;
+          if (knownByFingerprint.has(fp)) {
+            miles = knownByFingerprint.get(fp); // identical route already computed elsewhere — no API call needed
+          } else {
+            miles = await computeDayMileage(d);
+            if (miles !== null) knownByFingerprint.set(fp, miles);
+          }
+          if (miles !== null) {
+            cache[d] = { miles, fingerprint: fp };
+            sinceSave++;
+            if (sinceSave >= 10) {
+              await dbPut('settings', appState.settings);
+              if (document.getElementById('screen-summary').classList.contains('active')) renderSummary();
+              sinceSave = 0;
+            }
+          } else if (cached) {
+            delete cache[d]; // clear a previously-bad entry so it's retried too, not left stuck
           }
         }
       }
