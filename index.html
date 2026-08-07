@@ -256,6 +256,24 @@ h3 {
   text-transform: uppercase;
   margin-bottom: 6px;
 }
+/* Pairs a .label with a small inline action, e.g. the rate calculator
+   link above the Hourly Rate field — label stays left, action right,
+   both vertically centered on one row. */
+.label-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; }
+.label-row .label { margin-bottom: 0; }
+/* Two fields side by side, e.g. Rate (£) / Per (hrs) on the client
+   modal — each half gets equal width via the child .form-group's own
+   flex:1 (set inline where used, since form-group's default width:100%
+   would otherwise stack them). */
+.form-row { display: flex; gap: 10px; }
+.form-row .form-group { flex: 1; min-width: 0; }
+.text-btn {
+  background: none; border: none; padding: 0;
+  color: var(--accent2); font-size: 11.5px; font-weight: 600;
+  text-decoration: underline; text-underline-offset: 2px;
+  cursor: pointer; flex-shrink: 0; white-space: nowrap;
+}
+.text-btn:active { opacity: 0.6; }
 
 /* ── DIVIDER SYSTEM — three-tier hairline weights ──────────────
    .divider-hero = heavy, sits directly under a hero/summary block
@@ -528,6 +546,23 @@ h3 {
   cursor: pointer;
 }
 .slot-empty:active { opacity: 0.7; }
+
+/* Home row Call/Message icon buttons — plain line icons (not emoji),
+   modeled on .day-chevron-btn's circular style. Only rendered when the
+   client has a mobile number saved (see renderHome). */
+.slot-contact-btns { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.icon-btn-circle {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: 0.5px solid var(--border2);
+  background: var(--surface2);
+  color: var(--accent2);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.icon-btn-circle:active { opacity: 0.7; }
+.icon-btn-circle svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .slot-empty-icon {
   width: 22px; height: 22px;
   border-radius: var(--r-sm);
@@ -665,6 +700,25 @@ h3 {
 .invoice-detail-total { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: var(--text); padding: 8px 0 0; margin-top: 4px; border-top: 0.5px solid var(--border2); }
 .invoice-actions-row { display: flex; gap: 8px; margin-top: 10px; }
 .invoice-actions-row .btn { flex: 1; padding: 10px 14px; font-size: 13px; }
+
+/* Year view's monthly breakdown table (Apr–Mar) — grid-based rather
+   than the label/value row pattern above, since this needs 4 aligned
+   columns rather than 2. */
+.summary-monthly-table { margin-top: 6px; }
+.summary-monthly-table-header, .summary-monthly-row {
+  display: grid;
+  grid-template-columns: 0.8fr 1fr 1.2fr 1fr;
+  gap: 6px;
+  padding: 8px 0;
+  font-size: 12px;
+  border-bottom: 0.5px solid var(--border2);
+}
+.summary-monthly-table-header { color: var(--text3); font-weight: 600; }
+.summary-monthly-row { color: var(--text2); }
+.summary-monthly-row:last-child { border-bottom: none; }
+.summary-monthly-row.is-current-month { color: var(--text); font-weight: 600; }
+.summary-monthly-cell-month { color: var(--text); font-weight: 600; }
+.summary-monthly-cell { text-align: right; }
 
 /* ── HELP / TOUR BUTTON — plain "?" circle in every page-header,
    matches the rounded-rectangle/flat visual language (no pill shapes).
@@ -1000,9 +1054,9 @@ h3 {
       </div>
 
       <div class="segmented" id="summary-granularity-segmented">
-        <button type="button" class="active" data-value="day" onclick="setSegmented('summary-granularity-segmented','day'); summaryGranularityChanged();">Day</button>
+        <button type="button" data-value="day" onclick="setSegmented('summary-granularity-segmented','day'); summaryGranularityChanged();">Day</button>
         <button type="button" data-value="week" onclick="setSegmented('summary-granularity-segmented','week'); summaryGranularityChanged();">Week</button>
-        <button type="button" data-value="month" onclick="setSegmented('summary-granularity-segmented','month'); summaryGranularityChanged();">Month</button>
+        <button type="button" class="active" data-value="month" onclick="setSegmented('summary-granularity-segmented','month'); summaryGranularityChanged();">Month</button>
         <button type="button" data-value="year" onclick="setSegmented('summary-granularity-segmented','year'); summaryGranularityChanged();">Year</button>
       </div>
 
@@ -1025,6 +1079,7 @@ h3 {
         <button type="button" data-value="projected" onclick="setSegmented('summary-viewmode-segmented','projected'); summaryViewModeChanged();">Projected</button>
       </div>
       <div id="summary-metrics"></div>
+      <div id="summary-yearly-table"></div>
 
       <div class="divider"></div>
       <div class="page-header" style="padding-top:0;">
@@ -1323,8 +1378,16 @@ h3 {
     <div class="divider-sm"></div>
 
     <div class="form-group">
-      <div class="label">Hourly rate (£) — can be 0 for family/friends</div>
-      <input type="number" id="client-rate-input" min="0" step="0.5" inputmode="decimal" placeholder="e.g. 18">
+      <div class="label">Rate — can be £0 for family/friends</div>
+      <div class="form-row">
+        <div class="form-group" style="margin-bottom:0;">
+          <input type="number" id="client-rate-amount-input" min="0" step="0.01" inputmode="decimal" placeholder="Rate (£)" oninput="updateClientRatePreview()">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <input type="number" id="client-rate-duration-input" min="0.01" step="0.25" inputmode="decimal" placeholder="Per (hrs)" value="1" oninput="updateClientRatePreview()">
+        </div>
+      </div>
+      <div class="form-hint" id="client-rate-preview">£0.00/hr</div>
     </div>
 
     <div class="form-group">
@@ -1492,24 +1555,6 @@ h3 {
       <div style="height:10px;"></div>
       <button class="btn btn-secondary" style="width:100%;color:var(--red);border-color:var(--red);" onclick="deleteMessageTemplate()">Delete Template</button>
     </div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════
-     MODAL: APPOINTMENT CONTACT — tapping an appointment on Home opens
-     this Call/Message action sheet (spec: tap-to-contact from Home).
-═══════════════════════════════════════════ -->
-<div class="modal-overlay" id="modal-appt-contact">
-  <div class="modal-sheet">
-    <div class="modal-handle-row">
-      <div class="modal-handle"></div>
-      <button class="modal-close-btn" onclick="closeModal('modal-appt-contact')">✕</button>
-    </div>
-    <div class="modal-title" id="appt-contact-modal-name">Client</div>
-    <div class="form-hint" id="appt-contact-no-phone" style="display:none;margin-bottom:10px;">No phone number on file for this client — add one on the Clients page.</div>
-    <button class="btn btn-primary" style="width:100%;" id="appt-contact-call-btn">📞 Call</button>
-    <div style="height:10px;"></div>
-    <button class="btn btn-secondary" style="width:100%;" id="appt-contact-message-btn">💬 Message</button>
   </div>
 </div>
 
@@ -2792,9 +2837,9 @@ function startClientsTour() {
       // closeModal('modal-client') below once we return to the page-level
       // steps. openClientModal(null) is safe to re-run on every render
       // (forward or Back), since it always resets to a blank form.
-      { targetId: 'client-rate-input', screen: 'clients',
-        title: 'Hourly rate drives every calculation',
-        body: 'This is what invoices, revenue, and profit are all calculated from \u2014 whichever card was in effect on the appointment date. £0 is fine for family or friends; it\u2019s treated the same as a Cash client below (still shown normally, just excluded from the money figures).',
+      { targetId: 'client-rate-amount-input', screen: 'clients',
+        title: 'Rate drives every calculation',
+        body: 'This is what invoices, revenue, and profit are all calculated from \u2014 whichever card was in effect on the appointment date. Enter what\u2019s charged and over how long (e.g. £35 per 1.5hr visit, or £18 per 1hr for a plain hourly rate) \u2014 the app works out the rest. £0 is fine for family or friends; it\u2019s treated the same as a Cash client below (still shown normally, just excluded from the money figures).',
         onEnter: () => openClientModal(null) },
       { targetId: 'client-payment-segmented', screen: 'clients',
         title: 'Cash vs bank transfer',
@@ -2957,7 +3002,7 @@ function clientCurrentSnapshot(client) {
 
 function clientCurrentRate(client) {
   const snap = clientCurrentSnapshot(client);
-  return snap ? snap.hourlyRate : null;
+  return snap ? effectiveHourlyRate(snap.rateAmount, snap.rateDurationHours) : null;
 }
 function clientCurrentAddress(client) {
   const snap = clientCurrentSnapshot(client);
@@ -3007,8 +3052,7 @@ function renderClients() {
   let html = '';
   sorted.forEach((client, i) => {
     const snap = clientCurrentSnapshot(client) || {};
-    const rate = snap.hourlyRate;
-    const rateLabel = rate === null || rate === undefined ? '—' : (rate === 0 ? 'Free' : `£${rate}/hr`);
+    const rateLabel = rateSummaryLabel(snap.rateAmount, snap.rateDurationHours);
     const typeLabel = snap.clientType === 'commercial' ? 'Commercial' : 'Domestic';
     const contactLabel = snap.preferredContactMethod === 'sms' ? 'SMS' : 'Email';
     html += `
@@ -3029,6 +3073,12 @@ function escapeHtml(str) {
   d.textContent = str == null ? '' : str;
   return d.innerHTML;
 }
+
+// Plain line icons for Home's Call/Message buttons (spec: no emoji).
+// Generic phone-handset / speech-bubble glyphs, styled via currentColor
+// so they pick up .icon-btn-circle's colour automatically.
+const ICON_PHONE = '<svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+const ICON_MESSAGE = '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
 
 function updateVendorFieldVisibility() {
   const isCommercial = getSegmented('client-type-segmented') === 'commercial';
@@ -3091,10 +3141,12 @@ function openClientModal(id) {
     document.getElementById('client-billing-postcode-input').value = billing ? (billing.postcode || '') : '';
     updateBillingAddressVisibility();
 
-    document.getElementById('client-rate-input').value = (snap.hourlyRate === null || snap.hourlyRate === undefined) ? '' : snap.hourlyRate;
+    document.getElementById('client-rate-amount-input').value = (snap.rateAmount === null || snap.rateAmount === undefined) ? '' : snap.rateAmount;
+    document.getElementById('client-rate-duration-input').value = (snap.rateDurationHours === null || snap.rateDurationHours === undefined) ? 1 : snap.rateDurationHours;
+    updateClientRatePreview();
 
     renderHistoryList('client-card-history', client.profileHistory, v =>
-      `${escapeHtml(v.name)} · ${v.hourlyRate === 0 ? 'Free' : '£' + v.hourlyRate + '/hr'} · ${v.paymentMethod === 'cash' ? 'Cash' : 'Bank transfer'} · ${formatAddressSummary(v.address)}`);
+      `${escapeHtml(v.name)} · ${rateSummaryLabel(v.rateAmount, v.rateDurationHours)} · ${v.paymentMethod === 'cash' ? 'Cash' : 'Bank transfer'} · ${formatAddressSummary(v.address)}`);
   } else {
     document.getElementById('client-modal-title').textContent = 'Add Client';
     document.getElementById('client-name-input').value = '';
@@ -3112,7 +3164,9 @@ function openClientModal(id) {
     document.getElementById('client-billing-county-input').value = '';
     document.getElementById('client-billing-postcode-input').value = '';
     updateBillingAddressVisibility();
-    document.getElementById('client-rate-input').value = '';
+    document.getElementById('client-rate-amount-input').value = '';
+    document.getElementById('client-rate-duration-input').value = 1;
+    updateClientRatePreview();
     setSegmented('client-payment-segmented', 'bank_transfer');
     setSegmented('client-invoiced-segmented', 'yes');
     document.getElementById('client-card-history').innerHTML = '';
@@ -3265,6 +3319,60 @@ async function geocodePostcode(rawPostcode) {
   return { postcode: r.postcode, lat: r.latitude, lng: r.longitude, district: r.admin_district, region: r.region };
 }
 
+// ── Client rate model ────────────────────────────────────────────────
+// Rate is stored as an amount + a duration in hours (rateAmount,
+// rateDurationHours) rather than a single "hourly rate" — this covers
+// straightforward hourly billing (duration = 1) and flat-rate-per-visit
+// billing (e.g. £35 for a 90-minute clean, duration = 1.5) with the
+// same two fields, without needing a separate calculator step.
+//
+// The EFFECTIVE hourly rate (used for all revenue/invoice maths) is
+// always the exact, unrounded ratio — never rounded for storage or
+// calculation. Rounding only ever happens once, right at the end, on
+// each individual appointment's own total (see roundUpToNearestTenPence
+// and its call sites in revenue/invoice generation) — never on the rate
+// itself. This is deliberate: rounding the rate first and then
+// multiplying by hours compounds the rounding error across every
+// appointment; rounding only the final total keeps each appointment's
+// charge accurate to the money actually owed, every time.
+function effectiveHourlyRate(rateAmount, rateDurationHours) {
+  if (rateAmount === null || rateAmount === undefined || !rateDurationHours) return null;
+  return rateAmount / rateDurationHours;
+}
+
+// Always rounds UP (never down) to the nearest 10p — appointment/invoice
+// totals should never come out a fraction of a penny short of what's
+// actually owed, the way plain "nearest" rounding could. The tiny
+// epsilon is subtracted before the ceiling so a value that's already
+// exactly on a 10p boundary (but sitting a hair above it purely due to
+// binary float representation, e.g. 234.00000000000003) doesn't get
+// bumped up an extra, unnecessary 10p.
+function roundUpToNearestTenPence(amount) {
+  return Math.ceil(amount * 10 - 1e-9) / 10;
+}
+
+// Short display label for a rate, used on the Clients list and the
+// rate change-history — e.g. "£18.00/hr" for a plain hourly rate,
+// or "£35.00/1.5hr (≈£23.33/hr)" for a flat-rate-per-visit client, so
+// the underlying rate/duration is always visible alongside its
+// hourly equivalent.
+function rateSummaryLabel(rateAmount, rateDurationHours) {
+  if (rateAmount === null || rateAmount === undefined) return '—';
+  if (rateAmount === 0) return 'Free';
+  const hourly = effectiveHourlyRate(rateAmount, rateDurationHours);
+  if (rateDurationHours === 1) return `£${formatCurrency(rateAmount)}/hr`;
+  return `£${formatCurrency(rateAmount)}/${rateDurationHours}hr (≈£${formatCurrency(hourly)}/hr)`;
+}
+
+function updateClientRatePreview() {
+  const amount = parseFloat(document.getElementById('client-rate-amount-input').value);
+  const duration = parseFloat(document.getElementById('client-rate-duration-input').value);
+  const previewEl = document.getElementById('client-rate-preview');
+  const hourly = effectiveHourlyRate(isNaN(amount) ? null : amount, duration);
+  if (hourly === null || isNaN(hourly)) { previewEl.textContent = '£0.00/hr'; return; }
+  previewEl.textContent = (amount === 0 ? 'Free' : `£${formatCurrency(hourly)}/hr equivalent`) + (duration && duration !== 1 ? ` (£${formatCurrency(amount || 0)} per ${duration}hr visit)` : '');
+}
+
 // ── Save ──────────────────────────────────────────────────────────
 async function saveClient() {
   const name = document.getElementById('client-name-input').value.trim();
@@ -3297,10 +3405,12 @@ async function saveClient() {
   const newBillingAddress = (rawBillingAddress && (rawBillingAddress.line1 || rawBillingAddress.line2 || rawBillingAddress.county || rawBillingAddress.postcode))
     ? rawBillingAddress : null;
 
-  const rateRaw = document.getElementById('client-rate-input').value;
-  if (rateRaw === '') { alert('Please enter an hourly rate (0 is fine for family/friends).'); return; }
-  const newRate = parseFloat(rateRaw);
-  if (isNaN(newRate) || newRate < 0) { alert('Hourly rate must be 0 or more.'); return; }
+  const rateAmountRaw = document.getElementById('client-rate-amount-input').value;
+  if (rateAmountRaw === '') { alert('Please enter a rate (0 is fine for family/friends).'); return; }
+  const newRateAmount = parseFloat(rateAmountRaw);
+  if (isNaN(newRateAmount) || newRateAmount < 0) { alert('Rate must be 0 or more.'); return; }
+  const newRateDurationHours = parseFloat(document.getElementById('client-rate-duration-input').value);
+  if (isNaN(newRateDurationHours) || newRateDurationHours <= 0) { alert('Please enter how many hours that rate covers (e.g. 1 for a standard hourly rate).'); return; }
 
   const today = getLocalToday();
   const effectiveDate = document.getElementById('client-effective-date').value || addDays(today, -1);
@@ -3318,7 +3428,7 @@ async function saveClient() {
 
     const newSnap = {
       name, clientType, vendorNumber, preferredContactMethod, email, phone,
-      address: newAddr, billingAddress: newBillingAddress, hourlyRate: newRate, paymentMethod, isInvoiced, active,
+      address: newAddr, billingAddress: newBillingAddress, rateAmount: newRateAmount, rateDurationHours: newRateDurationHours, paymentMethod, isInvoiced, active,
     };
 
     // The whole card is one snapshot — if ANY field changed, version the
@@ -3342,7 +3452,7 @@ async function saveClient() {
       id: uuid(),
       profileHistory: createInitialVersionedHistory({
         name, clientType, vendorNumber, preferredContactMethod, email, phone,
-        address: newAddr, billingAddress: newBillingAddress, hourlyRate: newRate, paymentMethod, isInvoiced, active: true,
+        address: newAddr, billingAddress: newBillingAddress, rateAmount: newRateAmount, rateDurationHours: newRateDurationHours, paymentMethod, isInvoiced, active: true,
       }, today), // new clients always start today — the effective-date field is hidden entirely for new clients, and is irrelevant to creation
     };
     appState.clients.push(client);
@@ -3517,11 +3627,11 @@ function getWeekLetter(dateStr) {
 
 function formatHours(h) {
   const r = Math.round(h * 10) / 10;
-  return r + (r === 1 ? ' hr' : ' hrs');
+  return r.toLocaleString('en-GB') + (r === 1 ? ' hr' : ' hrs');
 }
 function formatHoursShort(h) {
   const r = Math.round(h * 10) / 10;
-  return r + 'h';
+  return r.toLocaleString('en-GB') + 'h';
 }
 
 // ── Resolving what actually shows on a given date ───────────────────
@@ -3570,8 +3680,7 @@ function effectiveSlotOrder(appt, dateStr) {
 function isBillableClientOnDate(client, dateStr) {
   const snap = client ? clientSnapshotOn(client, dateStr) : null;
   if (!snap || snap.paymentMethod === 'cash') return false;
-  const rate = snap.hourlyRate || 0;
-  return rate > 0;
+  return (snap.rateAmount || 0) > 0;
 }
 
 function dayUsedHours(dateStr) {
@@ -3854,9 +3963,9 @@ function renderHome() {
   const homeWeekLetterClass = isWeekend(homeSelectedDate) ? '' : (getWeekLetter(homeSelectedDate) === 'A' ? 'week-a' : 'week-b');
 
   // Home stays view-only for editing — no add/edit/drag here, that all
-  // lives on the Diary week grid — but tapping a row opens a Call/
-  // Message action sheet for that appointment's client (spec: tap-to-
-  // contact from Home).
+  // lives on the Diary week grid. Call/Message are inline icon buttons
+  // on each row rather than a tap-to-open action sheet (spec: plain
+  // icons, no modal) — shown only when the client has a mobile number.
   let html = '';
   occurrences.forEach((appt, idx) => {
     const client = appState.clients.find(c => c.id === appt.clientId);
@@ -3869,13 +3978,19 @@ function renderHome() {
     const addr = clientSnap ? clientSnap.address : null;
     const addrLabel = formatAddressSummary(addr);
     const rowMinHeight = Math.round(34 + appt.durationHours * 16); // proportional to duration
-    html += `<div class="slot-row readonly ${homeWeekLetterClass}" style="min-height:${rowMinHeight}px;cursor:${client ? 'pointer' : 'default'};"
-        ${client ? `onclick="openApptContactModal('${client.id}')"` : ''}>
+    const phone = clientSnap ? (clientSnap.phone || '').trim() : '';
+    const contactBtns = (client && phone) ? `
+      <div class="slot-contact-btns">
+        <button class="icon-btn-circle" onclick="event.stopPropagation(); callClientFromHome('${client.id}')" aria-label="Call ${escapeHtml(clientName)}">${ICON_PHONE}</button>
+        <button class="icon-btn-circle" onclick="event.stopPropagation(); messageClientFromHome('${client.id}')" aria-label="Message ${escapeHtml(clientName)}">${ICON_MESSAGE}</button>
+      </div>` : '';
+    html += `<div class="slot-row readonly ${homeWeekLetterClass}" style="min-height:${rowMinHeight}px;">
       <div class="slot-bar"></div>
       <div class="slot-content">
         <div class="row-title">${escapeHtml(clientName)}</div>
         <div class="row-sub">${formatHours(appt.durationHours)} · ${escapeHtml(addrLabel)}</div>
       </div>
+      ${contactBtns}
     </div>`;
     if (idx < occurrences.length - 1) html += '<div class="divider-sm"></div>';
   });
@@ -4432,8 +4547,8 @@ async function generateInvoiceForQueueEntry(clientId, monthKey) {
   const today = getLocalToday();
   const lineItems = occurred.map(o => {
     const snap = clientSnapshotOn(client, o.date) || {};
-    const rate = snap.hourlyRate || 0;
-    return { date: o.date, hours: o.hours, rate, total: Math.round(o.hours * rate * 100) / 100 };
+    const rate = effectiveHourlyRate(snap.rateAmount, snap.rateDurationHours) || 0;
+    return { date: o.date, hours: o.hours, rate, total: roundUpToNearestTenPence(o.hours * rate) };
   });
   const total = Math.round(lineItems.reduce((s, li) => s + li.total, 0) * 100) / 100;
 
@@ -4477,7 +4592,7 @@ function dismissQueueEntry(clientId, monthKey) {
 function invoiceEmailText(invoice, snap) {
   const firstName = snap.name.trim().split(/\s+/)[0];
   const subject = `Invoice ${invoice.invoiceNumber}`;
-  const body = `Hi ${firstName},\n\nPlease find attached invoice ${invoice.invoiceNumber} for £${invoice.total.toFixed(2)}, covering ${invoice.lineItems.length} appointment(s) in ${monthLabel(invoice.periodKey)}.\n\nPayment is due 7 days from the statement date.\n\nThanks!`;
+  const body = `Hi ${firstName},\n\nPlease find attached invoice ${invoice.invoiceNumber} for £${formatCurrency(invoice.total)}, covering ${invoice.lineItems.length} appointment(s) in ${monthLabel(invoice.periodKey)}.\n\nPayment is due 7 days from the statement date.\n\nThanks!`;
   return { subject, body };
 }
 
@@ -4612,10 +4727,10 @@ function invoiceLineItemsHtml(lineItems, total) {
   let html = lineItems.map(li => `
     <div class="invoice-line-row">
       <span>${formatDateUK(li.date)}</span>
-      <span>${formatHours(li.hours)} · £${li.rate.toFixed(2)}/hr</span>
-      <span>£${li.total.toFixed(2)}</span>
+      <span>${formatHours(li.hours)} · £${formatCurrency(li.rate)}/hr</span>
+      <span>£${formatCurrency(li.total)}</span>
     </div>`).join('');
-  html += `<div class="invoice-detail-total"><span>Total</span><span>£${total.toFixed(2)}</span></div>`;
+  html += `<div class="invoice-detail-total"><span>Total</span><span>£${formatCurrency(total)}</span></div>`;
   return html;
 }
 
@@ -4655,7 +4770,7 @@ function renderInvoices() {
             <div class="invoice-row-header" onclick="toggleInvoiceRow('${key}')">
               <div>
                 <div class="row-title">${escapeHtml(clientSnap ? clientSnap.name : 'Unknown client')} | ${monthLabel(inv.periodKey)}</div>
-                <div class="row-sub">${inv.invoiceNumber} · £${inv.total.toFixed(2)}</div>
+                <div class="row-sub">${inv.invoiceNumber} · £${formatCurrency(inv.total)}</div>
               </div>
               <div class="invoice-row-right">
                 <span class="chip chip-red">Overdue · ${daysOverdue}d</span>
@@ -4722,7 +4837,7 @@ function renderInvoices() {
             <div class="invoice-row-header" onclick="toggleInvoiceRow('${key}')">
               <div>
                 <div class="row-title">${escapeHtml(clientSnap ? clientSnap.name : 'Unknown client')} | ${monthLabel(inv.periodKey)}</div>
-                <div class="row-sub">${inv.invoiceNumber} · £${inv.total.toFixed(2)}</div>
+                <div class="row-sub">${inv.invoiceNumber} · £${formatCurrency(inv.total)}</div>
               </div>
               <div class="invoice-row-right">
                 <span class="chip chip-teal">Ready to send</span>
@@ -4756,7 +4871,7 @@ function renderInvoices() {
             <div class="invoice-row-header" onclick="toggleInvoiceRow('${key}')">
               <div>
                 <div class="row-title">${escapeHtml(clientSnap ? clientSnap.name : 'Unknown client')} | ${monthLabel(inv.periodKey)}</div>
-                <div class="row-sub">${inv.invoiceNumber} · £${inv.total.toFixed(2)}</div>
+                <div class="row-sub">${inv.invoiceNumber} · £${formatCurrency(inv.total)}</div>
               </div>
               <div class="invoice-row-right">
                 <span class="chip chip-amber">Outstanding</span>
@@ -4791,7 +4906,7 @@ function renderInvoices() {
             <div class="invoice-row-header" onclick="toggleInvoiceRow('${key}')">
               <div>
                 <div class="row-title">${escapeHtml(clientSnap ? clientSnap.name : 'Unknown client')} | ${monthLabel(inv.periodKey)}</div>
-                <div class="row-sub">${inv.invoiceNumber} · £${inv.total.toFixed(2)}</div>
+                <div class="row-sub">${inv.invoiceNumber} · £${formatCurrency(inv.total)}</div>
               </div>
               <div class="invoice-row-right">
                 <span class="chip chip-green">Paid</span>
@@ -4921,8 +5036,8 @@ function buildInvoicePdfBlob(invoice, client) {
   invoice.lineItems.forEach(li => {
     doc.text(formatDateUK(li.date), margin, y);
     doc.text(String(li.hours), margin + 180, y);
-    doc.text('£' + li.rate.toFixed(2), margin + 280, y);
-    doc.text('£' + li.total.toFixed(2), margin + 380, y);
+    doc.text('£' + formatCurrency(li.rate), margin + 280, y);
+    doc.text('£' + formatCurrency(li.total), margin + 380, y);
     y += 16;
     if (y > 760) { doc.addPage(); y = margin; }
   });
@@ -4933,7 +5048,7 @@ function buildInvoicePdfBlob(invoice, client) {
   doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
   // Right-aligned to the table's right edge so it sits directly under
   // the "Total" column above, rather than back at the left margin.
-  doc.text('Total: £' + invoice.total.toFixed(2), tableRight, y, { align: 'right' });
+  doc.text('Total: £' + formatCurrency(invoice.total), tableRight, y, { align: 'right' });
   y += 30;
 
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
@@ -5120,9 +5235,23 @@ async function dropboxUploadInvoice(blob, invoice, filename) {
 
 let summaryAnchorDate = null;
 
+// Default Month view (spec): current month, EXCEPT during the first 7
+// days of a new month, where it defaults to the previous month instead —
+// gives a grace window to finish submitting last month's numbers to
+// HMRC without the page having already rolled over.
+function summaryDefaultMonthAnchor() {
+  const today = getLocalToday();
+  const day = parseInt(today.split('-')[2], 10);
+  if (day > 7) return today;
+  const [y, m] = today.split('-').map(Number);
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  return `${py}-${String(pm).padStart(2, '0')}-01`;
+}
+
 function summaryPeriodBounds() {
-  const gran = getSegmented('summary-granularity-segmented') || 'day';
-  if (!summaryAnchorDate) summaryAnchorDate = getLocalToday();
+  const gran = getSegmented('summary-granularity-segmented') || 'month';
+  if (!summaryAnchorDate) summaryAnchorDate = (gran === 'month') ? summaryDefaultMonthAnchor() : getLocalToday();
   if (gran === 'day') return { start: summaryAnchorDate, end: summaryAnchorDate };
   if (gran === 'week') {
     const monday = getMondayOfWeek(summaryAnchorDate);
@@ -5138,7 +5267,7 @@ function summaryPeriodBounds() {
 }
 
 function summaryPeriodLabel() {
-  const gran = getSegmented('summary-granularity-segmented') || 'day';
+  const gran = getSegmented('summary-granularity-segmented') || 'month';
   const { start, end } = summaryPeriodBounds();
   if (gran === 'day') {
     const d = parseLocalDateStr(start);
@@ -5160,7 +5289,7 @@ function ordinalSuffix(n) {
 }
 
 function summaryPeriodSubLabel() {
-  const gran = getSegmented('summary-granularity-segmented') || 'day';
+  const gran = getSegmented('summary-granularity-segmented') || 'month';
   if (gran !== 'year') return '';
   const { start, end } = summaryPeriodBounds();
   const fmt = (s) => {
@@ -5173,7 +5302,7 @@ function summaryPeriodSubLabel() {
 }
 
 function summaryShiftPeriod(delta) {
-  const gran = getSegmented('summary-granularity-segmented') || 'day';
+  const gran = getSegmented('summary-granularity-segmented') || 'month';
   if (!summaryAnchorDate) summaryAnchorDate = getLocalToday();
   if (gran === 'day') {
     summaryAnchorDate = addDays(summaryAnchorDate, delta);
@@ -5198,7 +5327,7 @@ function summaryShiftPeriod(delta) {
 // a date field for Day, a week list for Week, a month field for Month,
 // and a tax-year list for Year.
 function openSummaryPeriodPicker() {
-  const gran = getSegmented('summary-granularity-segmented') || 'day';
+  const gran = getSegmented('summary-granularity-segmented') || 'month';
   const titleEl = document.getElementById('summary-period-modal-title');
   const bodyEl = document.getElementById('summary-period-picker-body');
 
@@ -5296,7 +5425,8 @@ function summaryPickYear(startYear) {
 }
 
 function summaryGranularityChanged() {
-  summaryAnchorDate = getLocalToday(); // jump back to "now" whenever the granularity changes
+  const gran = getSegmented('summary-granularity-segmented') || 'month';
+  summaryAnchorDate = (gran === 'month') ? summaryDefaultMonthAnchor() : getLocalToday(); // jump back to "now" whenever the granularity changes
   renderSummary();
 }
 
@@ -5324,8 +5454,9 @@ function getRevenueForRange(startDate, endDate, includeFuture) {
       getOccurrencesForDate(d).forEach(appt => {
         const client = appState.clients.find(c => c.id === appt.clientId);
         if (!isBillableClientOnDate(client, d)) return;
-        const rate = clientSnapshotOn(client, d).hourlyRate || 0;
-        total += appt.durationHours * rate;
+        const snap = clientSnapshotOn(client, d);
+        const rate = effectiveHourlyRate(snap.rateAmount, snap.rateDurationHours) || 0;
+        total += roundUpToNearestTenPence(appt.durationHours * rate);
       });
     }
     d = addDays(d, 1);
@@ -5347,8 +5478,8 @@ function getCashRevenueForRange(startDate, endDate, includeFuture) {
         const client = appState.clients.find(c => c.id === appt.clientId);
         const snap = client ? clientSnapshotOn(client, d) : null;
         if (!snap || snap.paymentMethod !== 'cash') return;
-        const rate = snap.hourlyRate || 0;
-        total += appt.durationHours * rate;
+        const rate = effectiveHourlyRate(snap.rateAmount, snap.rateDurationHours) || 0;
+        total += roundUpToNearestTenPence(appt.durationHours * rate);
       });
     }
     d = addDays(d, 1);
@@ -5395,8 +5526,8 @@ function getUngeneratedInvoicesValue(startDate, endDate) {
     entry.occurred.forEach(o => {
       if (compareDateStr(o.date, startDate) < 0 || compareDateStr(o.date, endDate) > 0) return;
       const snap = client ? clientSnapshotOn(client, o.date) : null;
-      const rate = snap ? (snap.hourlyRate || 0) : 0;
-      total += o.hours * rate;
+      const rate = snap ? (effectiveHourlyRate(snap.rateAmount, snap.rateDurationHours) || 0) : 0;
+      total += roundUpToNearestTenPence(o.hours * rate);
     });
   });
   return Math.round(total * 100) / 100;
@@ -5599,12 +5730,71 @@ function tieredMileageCost(milesBeforeRange, milesInRange) {
 
 function formatMiles(m) {
   const r = Math.round(m * 10) / 10;
-  return r + (r === 1 ? ' mile' : ' miles');
+  return r.toLocaleString('en-GB') + (r === 1 ? ' mile' : ' miles');
+}
+
+// Comma-grouped currency formatting (e.g. 1234.5 -> "1,234.50") — used
+// everywhere a £ amount is shown, since annual totals can run into
+// four figures and beyond.
+function formatCurrency(n) {
+  return (n || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatSignedCurrency(n) {
-  const abs = Math.abs(n).toFixed(2);
+  const abs = formatCurrency(Math.abs(n));
   return (n < 0 ? '-£' : '£') + abs;
+}
+
+// Year view only: a month-by-month breakdown (Apr-Mar, matching the UK
+// financial year used throughout the app) below the callouts — Revenue,
+// Revenue inc. Cash, and Mileage per month, so the shape of the whole
+// year is visible at a glance rather than just the annual total. Each
+// month respects the same Actual/Projected toggle as everything else on
+// the page. Mileage here is the raw distance only (no cost figure),
+// matching what was asked for — the tiered mileage allowance cost stays
+// exclusive to the callout above.
+function renderSummaryYearlyTable(fyStartYear, isProjected) {
+  const container = document.getElementById('summary-yearly-table');
+  const gran = getSegmented('summary-granularity-segmented') || 'month';
+  if (gran !== 'year') { container.innerHTML = ''; return; }
+
+  const mileageAvailable = !!getMileageOriginAddress() && !!appState.settings.orsApiKey;
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const todayMonth = getLocalToday().slice(0, 7);
+
+  let rows = '';
+  for (let i = 0; i < 12; i++) {
+    const m = ((3 + i) % 12) + 1; // Apr(4)..Dec(12), then Jan(1)..Mar(3)
+    const y = m >= 4 ? fyStartYear : fyStartYear + 1;
+    const monthKey = `${y}-${String(m).padStart(2, '0')}`;
+    const lastDay = new Date(y, m, 0).getDate();
+    const start = `${monthKey}-01`;
+    const end = `${monthKey}-${String(lastDay).padStart(2, '0')}`;
+
+    const revenue = getRevenueForRange(start, end, isProjected);
+    const cashRevenue = getCashRevenueForRange(start, end, isProjected);
+    const revenueIncCash = Math.round((revenue + cashRevenue) * 100) / 100;
+    const milesLabel = mileageAvailable ? formatMiles(getCachedMileageForRange(start, end, isProjected).miles) : '—';
+
+    rows += `
+      <div class="summary-monthly-row ${monthKey === todayMonth ? 'is-current-month' : ''}">
+        <div class="summary-monthly-cell-month">${monthNames[m - 1]}</div>
+        <div class="summary-monthly-cell">£${formatCurrency(revenue)}</div>
+        <div class="summary-monthly-cell">£${formatCurrency(revenueIncCash)}</div>
+        <div class="summary-monthly-cell">${milesLabel}</div>
+      </div>`;
+  }
+
+  container.innerHTML = `
+    <div class="summary-monthly-table">
+      <div class="summary-monthly-table-header">
+        <div>Month</div>
+        <div class="summary-monthly-cell">Revenue</div>
+        <div class="summary-monthly-cell">Rev. inc Cash</div>
+        <div class="summary-monthly-cell">Mileage</div>
+      </div>
+      ${rows}
+    </div>`;
 }
 
 // ── Rendering ────────────────────────────────────────────────────────
@@ -5666,39 +5856,39 @@ function renderSummary() {
     <div class="summary-metrics-grid">
       <div>
         <div class="summary-metric-label">Revenue${projSuffix}</div>
-        <div class="summary-metric-value">£${revenue.toFixed(2)}</div>
+        <div class="summary-metric-value">£${formatCurrency(revenue)}</div>
         ${projSub ? `<div class="summary-metric-sub">${projSub}</div>` : ''}
       </div>
       <div>
         <div class="summary-metric-label">Costs</div>
-        <div class="summary-metric-value">£${costs.toFixed(2)}</div>
+        <div class="summary-metric-value">£${formatCurrency(costs)}</div>
       </div>
       <div>
         <div class="summary-metric-label">Total Cash Revenue${projSuffix}</div>
-        <div class="summary-metric-value">£${cashRevenue.toFixed(2)}</div>
+        <div class="summary-metric-value">£${formatCurrency(cashRevenue)}</div>
         <div class="summary-metric-sub">Not included in Revenue or Profit — see Profit inc. Cash below</div>
       </div>
       <div>
         <div class="summary-metric-label">Total Revenue inc. Cash${projSuffix}</div>
-        <div class="summary-metric-value">£${revenueIncCash.toFixed(2)}</div>
+        <div class="summary-metric-value">£${formatCurrency(revenueIncCash)}</div>
       </div>
       <div>
         <div class="summary-metric-label">Mileage${projSuffix}</div>
         <div class="summary-metric-value">${mileageAvailable ? formatMiles(milesInRange) : '—'}</div>
-        <div class="summary-metric-sub">${mileageAvailable ? '£' + mileageCost.toFixed(2) + ' allowance (not included in Profit)' : ''}</div>
+        <div class="summary-metric-sub">${mileageAvailable ? '£' + formatCurrency(mileageCost) + ' allowance (not included in Profit)' : ''}</div>
       </div>
       <div>
         <div class="summary-metric-label">Salary</div>
-        <div class="summary-metric-value">£${salaryCost.toFixed(2)}</div>
+        <div class="summary-metric-value">£${formatCurrency(salaryCost)}</div>
       </div>
       <div>
         <div class="summary-metric-label">Unpaid Invoices</div>
-        <div class="summary-metric-value">£${unpaidInvoicesTotal.toFixed(2)}</div>
+        <div class="summary-metric-value">£${formatCurrency(unpaidInvoicesTotal)}</div>
         <div class="summary-metric-sub">Generated but not yet paid, for this period</div>
       </div>
       <div>
         <div class="summary-metric-label">Not Yet Invoiced</div>
-        <div class="summary-metric-value">£${ungeneratedInvoicesValue.toFixed(2)}</div>
+        <div class="summary-metric-value">£${formatCurrency(ungeneratedInvoicesValue)}</div>
         <div class="summary-metric-sub">Completed work in this period waiting to be generated</div>
       </div>
       ${mileageNote ? `<div class="summary-mileage-note">${mileageNote}</div>` : ''}
@@ -5715,6 +5905,7 @@ function renderSummary() {
     </div>`;
 
   renderSummaryReceipts(start, end);
+  renderSummaryYearlyTable(getFinancialYear(start).startYear, isProjected);
 }
 
 const RECEIPT_CATEGORY_LABELS = { fuel: 'Fuel', supplies: 'Supplies', equipment: 'Equipment', insurance: 'Insurance', other: 'Other' };
@@ -5736,7 +5927,7 @@ function renderSummaryReceipts(start, end) {
           <div class="row-title">${escapeHtml(r.description)}</div>
           <div class="row-sub">${formatDateUK(r.date)} · ${RECEIPT_CATEGORY_LABELS[r.category] || r.category}</div>
         </div>
-        <div class="row-value">£${r.total.toFixed(2)}</div>
+        <div class="row-value">£${formatCurrency(r.total)}</div>
       </div>`;
     if (idx < receipts.length - 1) html += '<div class="divider-sm"></div>';
   });
@@ -6030,7 +6221,7 @@ function renderSalaryList() {
     html += `
       <div class="row" onclick="openSalaryModal('${p.id}')">
         <div>
-          <div class="row-title">£${p.amount.toFixed(2)}</div>
+          <div class="row-title">£${formatCurrency(p.amount)}</div>
           <div class="row-sub">${formatDateUK(p.date)}${p.note ? ' · ' + escapeHtml(p.note) : ''}</div>
         </div>
       </div>`;
@@ -6040,7 +6231,7 @@ function renderSalaryList() {
 }
 
 // ── Message Templates — user-authored quick texts used from Home's
-// tap-to-contact action sheet (see openApptContactModal below). Same
+// inline Message icon button (see messageClientFromHome below). Same
 // add/edit/delete shape as Jenn's Salary above; lives in settings for
 // the same reason (small list, no need for its own IndexedDB store).
 let _editingMessageTemplateId = null;
@@ -6105,29 +6296,28 @@ function renderMessageTemplatesList() {
   listEl.innerHTML = html;
 }
 
-// ── Home tap-to-contact (spec: tap an appointment on Home → Call or
-// Message) ───────────────────────────────────────────────────────────
+// ── Home Call/Message (spec: plain icon buttons on each row, no modal,
+// hidden entirely when the client has no mobile number) ─────────────
 // Call launches the Phone app directly via tel:. Message opens the
 // template picker below; the chosen template is prefixed with the same
 // "Hi [First name]," greeting used on invoice emails, then handed to
 // the Messages app via the sms: URI scheme. iOS-specific separator
 // (&body=, not ?body=) — this app targets iPhone; Android would need
 // ?body= instead, per the sms: URI scheme's platform split.
-function openApptContactModal(clientId) {
+function callClientFromHome(clientId) {
   const client = appState.clients.find(c => c.id === clientId);
   const snap = client ? clientSnapshotOn(client, homeSelectedDate) : null;
-  if (!snap) return;
-  document.getElementById('appt-contact-modal-name').textContent = snap.name;
-  const phone = (snap.phone || '').trim();
-  const hasPhone = !!phone;
-  document.getElementById('appt-contact-no-phone').style.display = hasPhone ? 'none' : 'block';
-  const callBtn = document.getElementById('appt-contact-call-btn');
-  const msgBtn = document.getElementById('appt-contact-message-btn');
-  callBtn.style.display = hasPhone ? '' : 'none';
-  msgBtn.style.display = hasPhone ? '' : 'none';
-  callBtn.onclick = () => { closeModal('modal-appt-contact'); window.location.href = 'tel:' + phone.replace(/\s+/g, ''); };
-  msgBtn.onclick = () => { closeModal('modal-appt-contact'); openMessageTemplatePicker(snap.name, phone); };
-  openModalEl('modal-appt-contact');
+  const phone = snap ? (snap.phone || '').trim() : '';
+  if (!phone) return; // button shouldn't be shown without a phone, but guard anyway
+  window.location.href = 'tel:' + phone.replace(/\s+/g, '');
+}
+
+function messageClientFromHome(clientId) {
+  const client = appState.clients.find(c => c.id === clientId);
+  const snap = client ? clientSnapshotOn(client, homeSelectedDate) : null;
+  const phone = snap ? (snap.phone || '').trim() : '';
+  if (!phone) return;
+  openMessageTemplatePicker(snap.name, phone);
 }
 
 let _messagePickerContext = null; // { clientName, phone } — set when the picker opens, read on send
