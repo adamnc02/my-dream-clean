@@ -72,6 +72,11 @@
   --accent: var(--brand-navy);
   --accent2: var(--brand-teal);
   --on-accent: var(--on-accent-light);
+  /* Dark-blue "needs submitting" badge — Summary's UC/Year figures
+     (Revenue, Costs, Mileage) that feed the tax return. Light mode:
+     solid navy fill, light text. */
+  --highlight-bg: var(--brand-navy);
+  --highlight-text: var(--on-accent-light);
 }
 
 /* ── DARK MODE — the palette from Stage 1: near-black ground, teal
@@ -93,6 +98,10 @@
   --accent: var(--brand-teal);
   --accent2: var(--brand-teal-light);
   --on-accent: var(--on-accent-dark);
+  /* Same badge, inverted so it still pops against a near-black page:
+     light fill, dark navy text. */
+  --highlight-bg: var(--on-accent-light);
+  --highlight-text: var(--brand-navy);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -663,6 +672,30 @@ h3 {
 .summary-metric-value.profit-positive { color: var(--brand-teal); }
 .summary-metric-value.profit-negative { color: var(--red); }
 .summary-metric-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+/* UC/Year only: badges the three figures that actually feed the tax
+   return (Revenue excl. cash, Costs, Mileage) so they stand out from
+   the rest of the flat grid. Colours flip between modes via
+   --highlight-bg/--highlight-text above so it always reads as a solid,
+   high-contrast fill rather than disappearing into the page. */
+.summary-metric-highlight {
+  background: var(--highlight-bg);
+  border-radius: var(--r);
+  padding: 10px 12px;
+}
+.summary-metric-highlight .summary-metric-label,
+.summary-metric-highlight .summary-metric-value,
+.summary-metric-highlight .summary-metric-sub {
+  color: var(--highlight-text);
+}
+.summary-metric-highlight .summary-metric-label,
+.summary-metric-highlight .summary-metric-sub {
+  opacity: 0.8;
+}
+.summary-metric-highlight .icon-btn-tiny {
+  background: rgba(var(--surface-rgb), 0.18);
+  border-color: transparent;
+  color: var(--highlight-text);
+}
 .summary-mileage-note {
   grid-column: 1 / -1; font-size: 12px; color: var(--text3); line-height: 1.5; margin-top: -6px;
 }
@@ -1072,6 +1105,7 @@ h3 {
         <button type="button" data-value="day" onclick="setSegmented('summary-granularity-segmented','day'); summaryGranularityChanged();">Day</button>
         <button type="button" data-value="week" onclick="setSegmented('summary-granularity-segmented','week'); summaryGranularityChanged();">Week</button>
         <button type="button" class="active" data-value="month" onclick="setSegmented('summary-granularity-segmented','month'); summaryGranularityChanged();">Month</button>
+        <button type="button" data-value="uc" onclick="setSegmented('summary-granularity-segmented','uc'); summaryGranularityChanged();">UC</button>
         <button type="button" data-value="year" onclick="setSegmented('summary-granularity-segmented','year'); summaryGranularityChanged();">Year</button>
       </div>
 
@@ -2187,6 +2221,26 @@ function getFinancialYearBounds(startYear) {
   return { start: `${startYear}-04-01`, end: `${startYear + 1}-03-31` };
 }
 
+// ── UK self-employment tax year — runs 6 Apr to 5 Apr (the real HMRC
+// self-assessment year), labelled the same way as the FY helpers above
+// e.g. "2026/27". This is distinct from getFinancialYear/Bounds above:
+// those stay on the 1 Apr–31 Mar approximation for invoice numbering
+// and Dropbox archival (an existing, in-use numbering scheme that
+// shouldn't shift under already-issued invoices), while this pair is
+// used for the Summary page's reporting periods and the mileage
+// allowance's 10,000-mile-threshold year, where the real tax year is
+// what actually matters.
+function getUKTaxYear(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const startYear = (m > 4 || (m === 4 && d >= 6)) ? y : y - 1;
+  const endYearShort = String((startYear + 1) % 100).padStart(2, '0');
+  return { startYear, label: `${startYear}/${endYearShort}` };
+}
+
+function getUKTaxYearBounds(startYear) {
+  return { start: `${startYear}-04-06`, end: `${startYear + 1}-04-05` };
+}
+
 // ════════════════════════════════════════════════
 // FROM/TO VERSIONING
 // Applies to any field that can change over time but must never rewrite
@@ -2927,8 +2981,8 @@ function startSummaryTour() {
   requestAnimationFrame(() => setTimeout(() => {
     startTour([
       { targetId: 'summary-granularity-segmented', screen: 'summary',
-        title: 'Day, Week, Month, or Year',
-        body: 'Switch between reporting periods here. Year always means your tax year: 1 Apr to 31 Mar.' },
+        title: 'Day, Week, Month, UC, or Year',
+        body: 'Switch between reporting periods here. UC is a 13th-to-12th period. Year always means your tax year: 6 Apr to 5 Apr.' },
       { targetId: 'summary-period-label', screen: 'summary',
         title: 'Jump to a specific period',
         body: 'Tap here to jump straight to a date, week, month, or tax year, instead of stepping one at a time with the arrows.' },
@@ -5266,9 +5320,37 @@ function summaryDefaultMonthAnchor() {
   return `${py}-${String(pm).padStart(2, '0')}-01`;
 }
 
+// UC period = a 13th-to-12th cycle (e.g. 13 Apr – 12 May), mirroring
+// the "UC" (Universal Credit-style) monthly assessment window some
+// clients budget around. Returns the 13th that starts the cycle
+// containing dateStr.
+function ucPeriodStart(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (d >= 13) return `${y}-${String(m).padStart(2, '0')}-13`;
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  return `${py}-${String(pm).padStart(2, '0')}-13`;
+}
+
+// Default UC view: the cycle containing today, EXCEPT the cycle only
+// rolls over from the 17th onward — days 13th-16th keep showing the
+// prior cycle, giving the same kind of short grace window Month view
+// gets for HMRC timing.
+function summaryDefaultUCAnchor() {
+  const today = getLocalToday();
+  const day = parseInt(today.split('-')[2], 10);
+  if (day >= 13 && day <= 16) {
+    const [y, m] = today.split('-').map(Number);
+    const py = m === 1 ? y - 1 : y;
+    const pm = m === 1 ? 12 : m - 1;
+    return `${py}-${String(pm).padStart(2, '0')}-13`;
+  }
+  return ucPeriodStart(today);
+}
+
 function summaryPeriodBounds() {
   const gran = getSegmented('summary-granularity-segmented') || 'month';
-  if (!summaryAnchorDate) summaryAnchorDate = (gran === 'month') ? summaryDefaultMonthAnchor() : getLocalToday();
+  if (!summaryAnchorDate) summaryAnchorDate = (gran === 'month') ? summaryDefaultMonthAnchor() : (gran === 'uc') ? summaryDefaultUCAnchor() : getLocalToday();
   if (gran === 'day') return { start: summaryAnchorDate, end: summaryAnchorDate };
   if (gran === 'week') {
     const monday = getMondayOfWeek(summaryAnchorDate);
@@ -5279,8 +5361,14 @@ function summaryPeriodBounds() {
     const last = new Date(y, m, 0).getDate();
     return { start: `${y}-${String(m).padStart(2, '0')}-01`, end: `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}` };
   }
-  const fy = getFinancialYear(summaryAnchorDate);
-  return getFinancialYearBounds(fy.startYear);
+  if (gran === 'uc') {
+    const [y, m] = summaryAnchorDate.split('-').map(Number); // summaryAnchorDate is the 13th that starts this period
+    let ny = y, nm = m + 1;
+    if (nm > 12) { nm = 1; ny++; }
+    return { start: summaryAnchorDate, end: `${ny}-${String(nm).padStart(2, '0')}-12` };
+  }
+  const fy = getUKTaxYear(summaryAnchorDate);
+  return getUKTaxYearBounds(fy.startYear);
 }
 
 function summaryPeriodLabel() {
@@ -5295,7 +5383,14 @@ function summaryPeriodLabel() {
     return `W/C ${fmt(start)}`;
   }
   if (gran === 'month') return parseLocalDateStr(start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-  return getFinancialYear(start).label;
+  if (gran === 'uc') {
+    const fmt = (s) => {
+      const d = parseLocalDateStr(s);
+      return `${d.toLocaleDateString('en-GB', { month: 'short' })} ${String(d.getFullYear()).slice(-2)}`;
+    };
+    return `${fmt(start)} - ${fmt(end)}`;
+  }
+  return getUKTaxYear(start).label;
 }
 
 function ordinalSuffix(n) {
@@ -5307,15 +5402,16 @@ function ordinalSuffix(n) {
 
 function summaryPeriodSubLabel() {
   const gran = getSegmented('summary-granularity-segmented') || 'month';
-  if (gran !== 'year') return '';
+  if (gran !== 'year' && gran !== 'uc') return '';
   const { start, end } = summaryPeriodBounds();
-  const fmt = (s) => {
+  const fmt = (s, monthFormat) => {
     const d = parseLocalDateStr(s);
     const day = d.getDate();
-    const month = d.toLocaleDateString('en-GB', { month: 'short' });
+    const month = d.toLocaleDateString('en-GB', { month: monthFormat });
     return `${day}${ordinalSuffix(day)} ${month} ${d.getFullYear()}`;
   };
-  return `Tax Year | ${fmt(start)} - ${fmt(end)}`;
+  if (gran === 'uc') return `${fmt(start, 'long')} - ${fmt(end, 'long')}`;
+  return `Tax Year | ${fmt(start, 'short')} - ${fmt(end, 'short')}`;
 }
 
 function summaryShiftPeriod(delta) {
@@ -5332,9 +5428,15 @@ function summaryShiftPeriod(delta) {
     while (nm > 12) { nm -= 12; ny++; }
     const day = Math.min(parseInt(summaryAnchorDate.split('-')[2], 10), new Date(ny, nm, 0).getDate());
     summaryAnchorDate = `${ny}-${String(nm).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  } else if (gran === 'uc') {
+    const [y, m] = summaryAnchorDate.split('-').map(Number);
+    let ny = y, nm = m + delta;
+    while (nm < 1) { nm += 12; ny--; }
+    while (nm > 12) { nm -= 12; ny++; }
+    summaryAnchorDate = `${ny}-${String(nm).padStart(2, '0')}-13`;
   } else {
-    const fy = getFinancialYear(summaryAnchorDate);
-    summaryAnchorDate = getFinancialYearBounds(fy.startYear + delta).start;
+    const fy = getUKTaxYear(summaryAnchorDate);
+    summaryAnchorDate = getUKTaxYearBounds(fy.startYear + delta).start;
   }
   renderSummary();
 }
@@ -5342,7 +5444,7 @@ function summaryShiftPeriod(delta) {
 // Mirrors Home's date picker / Diary's week picker: tapping the period
 // label opens a picker whose shape matches the active granularity —
 // a date field for Day, a week list for Week, a month field for Month,
-// and a tax-year list for Year.
+// a 13th-12th period list for UC, and a tax-year list for Year.
 function openSummaryPeriodPicker() {
   const gran = getSegmented('summary-granularity-segmented') || 'month';
   const titleEl = document.getElementById('summary-period-modal-title');
@@ -5387,7 +5489,7 @@ function openSummaryPeriodPicker() {
       const monthStr = `${y}-${String(m).padStart(2, '0')}-01`;
       const mObj = parseLocalDateStr(monthStr);
       const label = mObj.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
-      const fy = getFinancialYear(monthStr);
+      const fy = getUKTaxYear(monthStr);
       const isCurrent = y === ty && m === tm;
       const isSelected = y === sy && m === sm;
       html += `<div class="monday-row ${isSelected ? 'current' : ''}" onclick="summaryPickMonth('${y}-${String(m).padStart(2, '0')}')">
@@ -5398,10 +5500,42 @@ function openSummaryPeriodPicker() {
       </div>`;
     }
     bodyEl.innerHTML = html;
+  } else if (gran === 'uc') {
+    titleEl.textContent = 'Jump to period';
+    const todayUcStart = ucPeriodStart(getLocalToday());
+    const currentAnchor = summaryAnchorDate || summaryDefaultUCAnchor();
+    const [ty, tm] = todayUcStart.split('-').map(Number);
+    const fmtShort = (s) => {
+      const d = parseLocalDateStr(s);
+      return `${d.toLocaleDateString('en-GB', { month: 'short' })} ${String(d.getFullYear()).slice(-2)}`;
+    };
+    const fmtLong = (s) => {
+      const d = parseLocalDateStr(s);
+      return `${d.getDate()}${ordinalSuffix(d.getDate())} ${d.toLocaleDateString('en-GB', { month: 'long' })} ${d.getFullYear()}`;
+    };
+    let html = '';
+    for (let i = -12; i <= 12; i++) {
+      let y = ty, m = tm + i;
+      while (m < 1) { m += 12; y--; }
+      while (m > 12) { m -= 12; y++; }
+      const periodStart = `${y}-${String(m).padStart(2, '0')}-13`;
+      let ey = y, em = m + 1;
+      if (em > 12) { em = 1; ey++; }
+      const periodEnd = `${ey}-${String(em).padStart(2, '0')}-12`;
+      const isCurrent = periodStart === todayUcStart;
+      const isSelected = periodStart === currentAnchor;
+      html += `<div class="monday-row ${isSelected ? 'current' : ''}" onclick="summaryPickUC('${periodStart}')">
+        <div>
+          <div class="row-title">${fmtShort(periodStart)} - ${fmtShort(periodEnd)}</div>
+          <div class="row-sub">${fmtLong(periodStart)} - ${fmtLong(periodEnd)}${isCurrent ? ' · Current' : ''}</div>
+        </div>
+      </div>`;
+    }
+    bodyEl.innerHTML = html;
   } else {
     titleEl.textContent = 'Jump to tax year';
-    const currentStartYear = getFinancialYear(getLocalToday()).startYear;
-    const selectedStartYear = getFinancialYear(summaryAnchorDate || getLocalToday()).startYear;
+    const currentStartYear = getUKTaxYear(getLocalToday()).startYear;
+    const selectedStartYear = getUKTaxYear(summaryAnchorDate || getLocalToday()).startYear;
     let html = '';
     for (let i = -5; i <= 5; i++) {
       const startYear = currentStartYear + i;
@@ -5411,7 +5545,7 @@ function openSummaryPeriodPicker() {
       html += `<div class="monday-row ${isSelected ? 'current' : ''}" onclick="summaryPickYear(${startYear})">
         <div>
           <div class="row-title">${fyLabel}</div>
-          <div class="row-sub">1 Apr ${startYear} – 31 Mar ${startYear + 1}${isCurrent ? ' · Current' : ''}</div>
+          <div class="row-sub">6 Apr ${startYear} – 5 Apr ${startYear + 1}${isCurrent ? ' · Current' : ''}</div>
         </div>
       </div>`;
     }
@@ -5436,14 +5570,19 @@ function summaryPickMonth(val) {
   renderSummary();
 }
 function summaryPickYear(startYear) {
-  summaryAnchorDate = getFinancialYearBounds(startYear).start;
+  summaryAnchorDate = getUKTaxYearBounds(startYear).start;
+  closeModal('modal-summary-period');
+  renderSummary();
+}
+function summaryPickUC(periodStart) {
+  summaryAnchorDate = periodStart;
   closeModal('modal-summary-period');
   renderSummary();
 }
 
 function summaryGranularityChanged() {
   const gran = getSegmented('summary-granularity-segmented') || 'month';
-  summaryAnchorDate = (gran === 'month') ? summaryDefaultMonthAnchor() : getLocalToday(); // jump back to "now" whenever the granularity changes
+  summaryAnchorDate = (gran === 'month') ? summaryDefaultMonthAnchor() : (gran === 'uc') ? summaryDefaultUCAnchor() : getLocalToday(); // jump back to "now" whenever the granularity changes
   renderSummary();
 }
 
@@ -5800,7 +5939,7 @@ async function refreshMileageForCurrentPeriod() {
 
   const { start, end } = summaryPeriodBounds();
   const isProjected = (getSegmented('summary-viewmode-segmented') || 'actual') === 'projected';
-  const fyBounds = getFinancialYearBounds(getFinancialYear(start).startYear);
+  const fyBounds = getUKTaxYearBounds(getUKTaxYear(start).startYear);
 
   await backgroundFillMileage(fyBounds.start, end, isProjected);
 
@@ -5836,14 +5975,16 @@ function formatSignedCurrency(n) {
   return (n < 0 ? '-£' : '£') + abs;
 }
 
-// Year view only: a month-by-month breakdown (Apr-Mar, matching the UK
-// financial year used throughout the app) below the callouts — Revenue,
-// Revenue inc. Cash, and Mileage per month, so the shape of the whole
-// year is visible at a glance rather than just the annual total. Each
-// month respects the same Actual/Projected toggle as everything else on
-// the page. Mileage here is the raw distance only (no cost figure),
-// matching what was asked for — the tiered mileage allowance cost stays
-// exclusive to the callout above.
+// Year view only: a month-by-month breakdown below the callouts —
+// Revenue, Revenue inc. Cash, and Mileage per month, so the shape of
+// the whole year is visible at a glance rather than just the annual
+// total. Each row is a 6th-to-5th period (matching the real UK tax
+// year's own monthly cadence, e.g. "Apr" = 6 Apr - 5 May) so the 12
+// rows sum exactly to the annual total shown above, and labelled by
+// its starting month. Each month respects the same Actual/Projected
+// toggle as everything else on the page. Mileage here is the raw
+// distance only (no cost figure), matching what was asked for — the
+// tiered mileage allowance cost stays exclusive to the callout above.
 function renderSummaryYearlyTable(fyStartYear, isProjected) {
   const container = document.getElementById('summary-yearly-table');
   const gran = getSegmented('summary-granularity-segmented') || 'month';
@@ -5851,24 +5992,25 @@ function renderSummaryYearlyTable(fyStartYear, isProjected) {
 
   const mileageAvailable = !!getMileageOriginAddress() && !!appState.settings.orsApiKey;
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const todayMonth = getLocalToday().slice(0, 7);
+  const today = getLocalToday();
 
   let rows = '';
   for (let i = 0; i < 12; i++) {
     const m = ((3 + i) % 12) + 1; // Apr(4)..Dec(12), then Jan(1)..Mar(3)
     const y = m >= 4 ? fyStartYear : fyStartYear + 1;
-    const monthKey = `${y}-${String(m).padStart(2, '0')}`;
-    const lastDay = new Date(y, m, 0).getDate();
-    const start = `${monthKey}-01`;
-    const end = `${monthKey}-${String(lastDay).padStart(2, '0')}`;
+    let em = m + 1, ey = y;
+    if (em > 12) { em = 1; ey++; }
+    const start = `${y}-${String(m).padStart(2, '0')}-06`;
+    const end = `${ey}-${String(em).padStart(2, '0')}-05`;
 
     const revenue = getRevenueForRange(start, end, isProjected);
     const cashRevenue = getCashRevenueForRange(start, end, isProjected);
     const revenueIncCash = Math.round((revenue + cashRevenue) * 100) / 100;
     const milesLabel = mileageAvailable ? formatMiles(getCachedMileageForRange(start, end, isProjected).miles) : '—';
+    const isCurrentRow = today >= start && today <= end;
 
     rows += `
-      <div class="summary-monthly-row ${monthKey === todayMonth ? 'is-current-month' : ''}">
+      <div class="summary-monthly-row ${isCurrentRow ? 'is-current-month' : ''}">
         <div class="summary-monthly-cell-month">${monthNames[m - 1]}</div>
         <div class="summary-monthly-cell">£${formatCurrency(revenue)}</div>
         <div class="summary-monthly-cell">£${formatCurrency(revenueIncCash)}</div>
@@ -5891,8 +6033,9 @@ function renderSummaryYearlyTable(fyStartYear, isProjected) {
 // ── Rendering ────────────────────────────────────────────────────────
 function renderSummary() {
   if (!appState.settings) return;
+  const gran = getSegmented('summary-granularity-segmented') || 'month';
   const { start, end } = summaryPeriodBounds();
-  document.getElementById('summary-fy-sub').textContent = getFinancialYear(start).label;
+  document.getElementById('summary-fy-sub').textContent = getUKTaxYear(start).label;
   document.getElementById('summary-period-label').textContent = summaryPeriodLabel();
   document.getElementById('summary-period-sub').textContent = summaryPeriodSubLabel();
 
@@ -5910,8 +6053,8 @@ function renderSummary() {
 
   let milesInRange = 0, mileageCost = 0, mileageNote = '';
   if (mileageAvailable) {
-    const fy = getFinancialYear(start);
-    const fyBounds = getFinancialYearBounds(fy.startYear);
+    const fy = getUKTaxYear(start);
+    const fyBounds = getUKTaxYearBounds(fy.startYear);
     const dayBeforeStart = addDays(start, -1);
     // Miles already accrued earlier in the FY are always the actual
     // figure (they've genuinely happened, or not, regardless of which
@@ -5942,15 +6085,21 @@ function renderSummary() {
 
   const projSuffix = isProjected ? ' (Projected)' : '';
   const projSub = isProjected ? 'Includes appointments in this period that haven\u2019t happened yet' : '';
+  // Revenue (excl. cash), Costs, and Mileage are the figures that
+  // actually feed the tax return — badged on UC/Year only, where
+  // someone's more likely to be reading this page to submit numbers
+  // rather than just checking in on a day/week/month.
+  const highlightSubmissionFigures = (gran === 'uc' || gran === 'year');
+  const highlightClass = highlightSubmissionFigures ? ' summary-metric-highlight' : '';
 
   document.getElementById('summary-metrics').innerHTML = `
     <div class="summary-metrics-grid">
-      <div>
+      <div class="${highlightClass.trim()}">
         <div class="summary-metric-label">Revenue${projSuffix}</div>
         <div class="summary-metric-value">£${formatCurrency(revenue)}</div>
         ${projSub ? `<div class="summary-metric-sub">${projSub}</div>` : ''}
       </div>
-      <div>
+      <div class="${highlightClass.trim()}">
         <div class="summary-metric-label">Costs</div>
         <div class="summary-metric-value">£${formatCurrency(costs)}</div>
       </div>
@@ -5963,7 +6112,7 @@ function renderSummary() {
         <div class="summary-metric-label">Total Revenue inc. Cash${projSuffix}</div>
         <div class="summary-metric-value">£${formatCurrency(revenueIncCash)}</div>
       </div>
-      <div>
+      <div class="${highlightClass.trim()}">
         <div class="summary-metric-label-row">
           <div class="summary-metric-label">Mileage${projSuffix}</div>
           ${mileageAvailable ? `<button class="icon-btn-tiny ${_mileageManualRefreshing ? 'spinning' : ''}" ${_mileageManualRefreshing ? 'disabled' : ''} onclick="refreshMileageForCurrentPeriod()" aria-label="Refresh mileage">${ICON_REFRESH}</button>` : ''}
@@ -5999,7 +6148,7 @@ function renderSummary() {
     </div>`;
 
   renderSummaryReceipts(start, end);
-  renderSummaryYearlyTable(getFinancialYear(start).startYear, isProjected);
+  renderSummaryYearlyTable(getUKTaxYear(start).startYear, isProjected);
 }
 
 const RECEIPT_CATEGORY_LABELS = { fuel: 'Fuel', supplies: 'Supplies', equipment: 'Equipment', insurance: 'Insurance', other: 'Other' };
