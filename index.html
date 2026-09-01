@@ -856,6 +856,70 @@ h3 {
   background: var(--surface); border: 0.5px solid var(--border2);
   border-radius: var(--r-lg); padding: 20px; width: 100%; max-width: 320px;
 }
+
+/* ── AUTH GATE — Supabase Auth sign-in, ported from BLOC ────────────────
+   Full-screen overlay, not part of the .modal-overlay system: it has to
+   block #app before the boot sequence at the bottom of this file runs,
+   so it's wired directly rather than through openModal()/closeModal().
+   Defaults to visible (fail closed) — JS only hides it once
+   initSupabaseAuth() positively confirms a session. */
+#auth-gate {
+  position: fixed; inset: 0; z-index: 10000;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  overflow-y: auto;
+  padding: 24px 20px calc(24px + var(--safe-bottom));
+}
+#auth-gate.hidden { display: none; }
+.auth-gate-inner { width: 100%; max-width: 360px; margin: auto; }
+.auth-gate-logo {
+  font-family: var(--font-display); font-size: 22px; font-weight: 800;
+  color: var(--text); text-align: center; letter-spacing: 0.01em;
+}
+.auth-gate-tagline {
+  font-size: 13px; color: var(--text2); text-align: center;
+  margin: 6px 0 28px;
+}
+.auth-provider-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 12px; margin-bottom: 10px;
+  border-radius: var(--r-sm); border: 1px solid var(--border2);
+  background: var(--surface2); color: var(--text);
+  font-family: var(--font-display); font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s;
+}
+.auth-provider-btn:active { transform: scale(0.98); }
+.auth-provider-btn svg { flex-shrink: 0; }
+.auth-divider {
+  display: flex; align-items: center; gap: 10px;
+  margin: 18px 0; color: var(--text3); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.auth-divider::before, .auth-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border2);
+}
+.auth-tabs {
+  display: flex; border: 1px solid var(--border2); border-radius: var(--r-sm);
+  overflow: hidden; margin-bottom: 18px;
+}
+.auth-tab {
+  flex: 1; padding: 9px; border: none; background: transparent;
+  color: var(--text2); font-family: var(--font-display); font-size: 13px;
+  font-weight: 600; cursor: pointer;
+}
+.auth-tab.active { background: var(--accent); color: var(--on-accent); }
+#auth-error {
+  font-size: 12px; color: var(--red); text-align: center;
+  margin-top: 8px; line-height: 1.5;
+}
+#auth-status {
+  font-size: 12px; color: var(--text2); text-align: center;
+  margin-top: 8px; line-height: 1.5;
+}
+#auth-forgot-row { text-align: center; margin-top: 14px; }
+#auth-forgot-row a {
+  font-size: 12px; color: var(--accent2); cursor: pointer;
+}
 </style>
 <script>
 /* ══════════════════════════════════════════════════════════════
@@ -974,6 +1038,39 @@ h3 {
 </script>
 </head>
 <body data-mode="light">
+
+<!-- AUTH GATE — mandatory Supabase sign-in, sits above #app. Visible by
+     default (see CSS) and only hidden once initSupabaseAuth() confirms a
+     real session — see the AUTH block near the end of the main script. -->
+<div id="auth-gate">
+  <div class="auth-gate-inner">
+    <div class="auth-gate-logo">My Dream Clean</div>
+    <div class="auth-gate-tagline" id="auth-gate-tagline">Sign in to continue</div>
+
+    <div id="auth-provider-list"></div>
+
+    <div class="auth-divider"><span>or</span></div>
+
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" id="auth-tab-signin" onclick="setAuthMode('signin')">Sign In</button>
+      <button type="button" class="auth-tab" id="auth-tab-signup" onclick="setAuthMode('signup')">Sign Up</button>
+    </div>
+
+    <div class="form-group">
+      <input type="email" id="auth-email-input" placeholder="Email" autocomplete="email" inputmode="email">
+    </div>
+    <div class="form-group">
+      <input type="password" id="auth-password-input" placeholder="Password" autocomplete="current-password">
+    </div>
+
+    <button class="btn btn-primary" style="width:100%;" id="auth-submit-btn" onclick="submitEmailAuth()">Sign In →</button>
+    <div id="auth-forgot-row"><a onclick="sendPasswordReset()">Forgot password?</a></div>
+
+    <div id="auth-error" style="display:none;"></div>
+    <div id="auth-status" style="display:none;"></div>
+  </div>
+</div>
+
 <div id="app">
 <div class="edge-fade edge-fade-top"></div>
 <div class="edge-fade edge-fade-bottom"></div>
@@ -1299,8 +1396,23 @@ h3 {
 
       <div class="divider"></div>
 
+      <div class="label">Account</div>
+      <div style="font-family:var(--font-display);font-size:14px;font-weight:700;margin-bottom:4px;" id="account-email-display">—</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.5;" id="account-provider-display"></div>
+      <!-- Email/password accounts only — OAuth accounts have no app-side
+           password to change. Hidden by default; shown by updateAccountUI()
+           when the signed-in session's provider is 'email'. -->
+      <button id="account-change-password-btn" onclick="openChangePassword()" style="display:none;margin-top:10px;background:none;border:none;padding:0;color:var(--accent2);font-size:12px;cursor:pointer;text-align:left;">Change password</button>
+      <div class="form-hint" style="margin-top:10px;" id="account-last-backup-display">No cloud backup yet</div>
+      <button class="btn btn-secondary" style="width:100%; margin-top:10px;margin-bottom:10px;" id="account-backup-now-btn" onclick="handleBackupNow('account-backup-now-btn','account-backup-status')">Back Up to Cloud Now</button>
+      <button class="btn btn-secondary" style="width:100%; margin-bottom:10px;" onclick="openRestorePicker()">Restore from Cloud</button>
+      <div id="account-backup-status" style="font-size:12px;margin-bottom:10px;text-align:center;display:none;"></div>
+      <button class="btn btn-secondary" style="width:100%;color:var(--red);border-color:var(--red);" onclick="signOutUser()">Sign Out</button>
+
+      <div class="divider"></div>
+
       <div class="label">Data Backup</div>
-      <div class="form-hint" style="margin-bottom:10px;">A full backup of everything in the app — clients, appointments, invoices, receipts and settings — for disaster recovery.</div>
+      <div class="form-hint" style="margin-bottom:10px;">A full backup of everything in the app — clients, appointments, invoices, receipts and settings — for disaster recovery. Local file stays on this device; Cloud Backup above requires being signed in.</div>
       <button class="btn btn-secondary" style="width:100%; margin-bottom:10px;" onclick="exportJsonBackup()">Export Backup (JSON)</button>
       <input type="file" id="settings-import-input" accept="application/json" style="display:none;" onchange="importJsonBackup(event)">
       <button class="btn btn-secondary" style="width:100%;color:var(--red);border-color:var(--red);" onclick="document.getElementById('settings-import-input').click()">Import Backup (JSON)</button>
@@ -1342,6 +1454,44 @@ h3 {
       <span class="nav-label">Settings</span>
     </button>
   </nav>
+</div>
+
+<!-- Change Password — email/password accounts only, opened from the
+     "Change password" link in Settings → Account. -->
+<div class="modal-overlay" id="modal-change-password">
+  <div class="modal-sheet">
+    <div class="modal-handle-row">
+      <div class="modal-handle"></div>
+      <button class="modal-close-btn" onclick="closeModal('modal-change-password')">✕</button>
+    </div>
+    <div class="modal-title">Change Password</div>
+    <div class="form-group">
+      <div class="label">New Password</div>
+      <input type="password" id="change-password-new" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <div class="label">Confirm New Password</div>
+      <input type="password" id="change-password-confirm" autocomplete="new-password">
+    </div>
+    <button class="btn btn-primary" style="width:100%;" id="change-password-submit-btn" onclick="submitChangePassword()">Update Password</button>
+    <div id="change-password-status" style="font-size:12px;margin-top:10px;text-align:center;display:none;"></div>
+  </div>
+</div>
+
+<!-- Restore picker — lists this account's dated cloud snapshots; picking
+     one downloads and restores it via the same applyBackupPayload() path
+     a local-file restore uses. -->
+<div class="modal-overlay" id="modal-restore-picker">
+  <div class="modal-sheet">
+    <div class="modal-handle-row">
+      <div class="modal-handle"></div>
+      <button class="modal-close-btn" onclick="closeModal('modal-restore-picker')">✕</button>
+    </div>
+    <div class="modal-title">Restore from a snapshot</div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:8px;">This replaces everything on this device with the chosen snapshot. It can't be undone locally.</div>
+    <div id="restore-picker-last-backup" style="font-size:11px;color:var(--text3);margin-bottom:12px;"></div>
+    <div id="restore-picker-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+  </div>
 </div>
 
 <!-- ════════════════════════════════════════
@@ -6600,11 +6750,32 @@ function sendTemplateMessage(templateId) {
 // mechanism. Exports every store verbatim; import fully replaces
 // on-device data after an explicit confirm, since this is a
 // destructive, whole-app-replacing action. ──────────────────────────
-async function exportJsonBackup() {
+
+// Shared by exportJsonBackup() (local file) and uploadSnapshot() (cloud) —
+// single source of truth for what "a full backup" contains, so the two
+// paths can never silently drift apart.
+async function buildBackupPayload() {
   const data = {};
   for (const store of DB_STORES) data[store] = await dbGetAll(store);
   data.exportedAt = new Date().toISOString();
   data.appVersion = 'mdc-stage8';
+  return data;
+}
+
+// Shared by importJsonBackup() (local file) and restoreFromSnapshot()
+// (cloud) — replaces every store's contents with the given payload's.
+// Caller is responsible for confirming with the person first; this
+// function itself doesn't ask.
+async function applyBackupPayload(data) {
+  for (const store of DB_STORES) {
+    const existing = await dbGetAll(store);
+    for (const rec of existing) await dbDelete(store, rec.id);
+    for (const rec of data[store]) await dbPut(store, rec);
+  }
+}
+
+async function exportJsonBackup() {
+  const data = await buildBackupPayload();
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   await saveOrShareFile(blob, `my-dream-clean-backup-${getLocalToday()}.json`);
 }
@@ -6620,11 +6791,7 @@ function importJsonBackup(event) {
     const missing = DB_STORES.filter(store => !Array.isArray(data[store]));
     if (missing.length > 0) { alert('That file does not look like a My Dream Clean backup.'); return; }
     showConfirm('Import this backup? It will replace ALL current data on this device — clients, appointments, invoices, receipts, and settings. This cannot be undone.', async () => {
-      for (const store of DB_STORES) {
-        const existing = await dbGetAll(store);
-        for (const rec of existing) await dbDelete(store, rec.id);
-        for (const rec of data[store]) await dbPut(store, rec);
-      }
+      await applyBackupPayload(data);
       alert('Backup imported. The app will now reload.');
       window.location.reload();
     });
@@ -6633,16 +6800,408 @@ function importJsonBackup(event) {
   event.target.value = ''; // allow re-selecting the same file later
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// AUTH — Supabase Auth sign-in, ported from BLOC. See
+// PROJECT-SETUP-INSTRUCTIONS.md for the project URL/anon key and
+// SUPABASE-MIGRATION-PLAN.md for why this app has no relational tables —
+// snapshot backup/storage only.
+// ════════════════════════════════════════════════════════════════════════
+const SUPABASE_URL = 'https://nxekrfdagkdwhjuunsrl.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_hv-9Mb3Y36PklJ2Yo4KBhw_XEy3z5lP';
+const BACKUP_BUCKET = 'my-dream-clean-backups';
+
+let supabase = null; // set once the dynamic import + createClient() resolve
+
+const AUTH_PROVIDERS = [
+  {
+    id: 'google',
+    provider: 'google',
+    label: 'Continue with Google',
+    icon: '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M23.52 12.27c0-.82-.07-1.6-.2-2.36H12v4.47h6.47c-.28 1.5-1.13 2.77-2.4 3.62v3h3.88c2.27-2.09 3.57-5.17 3.57-8.73z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.9l-3.88-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.26v3.1C3.24 21.3 7.28 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.29c-.24-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29v-3.1H1.26A11.96 11.96 0 0 0 0 12c0 1.94.46 3.77 1.26 5.39l4.01-3.1z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.44-3.44C17.95 1.19 15.24 0 12 0 7.28 0 3.24 2.7 1.26 6.61l4.01 3.1C6.22 6.86 8.87 4.75 12 4.75z"/></svg>',
+  },
+];
+
+function renderAuthProviders() {
+  const el = document.getElementById('auth-provider-list');
+  if (!el) return;
+  el.innerHTML = AUTH_PROVIDERS.map(p =>
+    '<button type="button" class="auth-provider-btn" onclick="signInWithProvider(\'' + p.id + '\')">' + p.icon + '<span>' + p.label + '</span></button>'
+  ).join('');
+}
+renderAuthProviders();
+
+// undefined = auth not checked yet, null = checked and signed out,
+// object = a real session.
+let _authResolvedSession = undefined;
+let _bootStarted = false; // guards runBoot() from running twice (e.g. a later token-refresh event)
+
+async function initSupabaseAuth() {
+  try {
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    onAuthResolved(data.session || null);
+    supabase.auth.onAuthStateChange((_event, session) => { onAuthResolved(session); });
+  } catch (err) {
+    console.warn('[auth] Supabase init/session check failed:', err && err.message);
+    showAuthGateError('Couldn\u2019t connect. Check your connection and try reloading.');
+  }
+}
+
+function onAuthResolved(session) {
+  _authResolvedSession = session || null;
+  if (session) {
+    hideAuthGate();
+    updateAccountUI(session);
+    maybeUploadSnapshotZero();
+    if (!_bootStarted) { _bootStarted = true; runBoot(); }
+  } else {
+    showAuthGate();
+  }
+}
+
+function showAuthGate() {
+  const gate = document.getElementById('auth-gate');
+  if (gate) gate.classList.remove('hidden');
+}
+function hideAuthGate() {
+  const gate = document.getElementById('auth-gate');
+  if (gate) gate.classList.add('hidden');
+  const errEl = document.getElementById('auth-error');
+  if (errEl) errEl.style.display = 'none';
+  const statusEl = document.getElementById('auth-status');
+  if (statusEl) statusEl.style.display = 'none';
+}
+function showAuthGateError(msg) {
+  showAuthGate();
+  const errEl = document.getElementById('auth-error');
+  if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+}
+
+let _authMode = 'signin'; // 'signin' | 'signup'
+function setAuthMode(mode) {
+  _authMode = mode;
+  document.getElementById('auth-tab-signin').classList.toggle('active', mode === 'signin');
+  document.getElementById('auth-tab-signup').classList.toggle('active', mode === 'signup');
+  document.getElementById('auth-submit-btn').textContent = mode === 'signin' ? 'Sign In \u2192' : 'Sign Up \u2192';
+  document.getElementById('auth-forgot-row').style.display = mode === 'signin' ? 'block' : 'none';
+  document.getElementById('auth-password-input').autocomplete = mode === 'signin' ? 'current-password' : 'new-password';
+  const errEl = document.getElementById('auth-error'); if (errEl) errEl.style.display = 'none';
+}
+
+async function signInWithProvider(providerId) {
+  if (!supabase) return;
+  const cfg = AUTH_PROVIDERS.find(p => p.id === providerId);
+  if (!cfg) return;
+  const errEl = document.getElementById('auth-error');
+  if (errEl) errEl.style.display = 'none';
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: cfg.provider,
+      options: { redirectTo: window.location.href },
+    });
+    if (error) throw error;
+  } catch (err) {
+    showAuthGateError(err && err.message ? err.message : 'Sign-in failed. Please try again.');
+  }
+}
+
+async function submitEmailAuth() {
+  if (!supabase) return;
+  const email = (document.getElementById('auth-email-input').value || '').trim();
+  const password = document.getElementById('auth-password-input').value || '';
+  const errEl = document.getElementById('auth-error');
+  const statusEl = document.getElementById('auth-status');
+  if (errEl) errEl.style.display = 'none';
+  if (statusEl) statusEl.style.display = 'none';
+
+  if (!email || !password) {
+    if (errEl) { errEl.textContent = 'Enter both an email and a password.'; errEl.style.display = 'block'; }
+    return;
+  }
+
+  const btn = document.getElementById('auth-submit-btn');
+  if (btn) btn.disabled = true;
+  try {
+    if (_authMode === 'signup') {
+      const { data, error } = await supabase.auth.signUp({
+        email, password,
+        options: { emailRedirectTo: window.location.href },
+      });
+      if (error) throw error;
+      if (!data.session) {
+        if (statusEl) { statusEl.textContent = 'Check your email to confirm your account, then sign in.'; statusEl.style.display = 'block'; }
+        setAuthMode('signin');
+      }
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    }
+  } catch (err) {
+    if (errEl) { errEl.textContent = err && err.message ? err.message : 'Something went wrong. Please try again.'; errEl.style.display = 'block'; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function sendPasswordReset() {
+  if (!supabase) return;
+  const email = (document.getElementById('auth-email-input').value || '').trim();
+  const errEl = document.getElementById('auth-error');
+  const statusEl = document.getElementById('auth-status');
+  if (!email) {
+    if (errEl) { errEl.textContent = 'Enter your email above first.'; errEl.style.display = 'block'; }
+    return;
+  }
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.href });
+    if (error) throw error;
+    if (errEl) errEl.style.display = 'none';
+    if (statusEl) { statusEl.textContent = 'Password reset email sent.'; statusEl.style.display = 'block'; }
+  } catch (err) {
+    if (statusEl) statusEl.style.display = 'none';
+    if (errEl) { errEl.textContent = err && err.message ? err.message : 'Could not send reset email.'; errEl.style.display = 'block'; }
+  }
+}
+
+async function signOutUser() {
+  if (!supabase) return;
+  try {
+    await supabase.auth.signOut();
+  } catch (err) {
+    console.warn('[auth] sign-out failed:', err && err.message);
+  }
+  // onAuthStateChange fires with a null session and shows the gate again.
+  // Local IndexedDB data is left completely untouched.
+}
+
+function updateAccountUI(session) {
+  const emailEl = document.getElementById('account-email-display');
+  const providerEl = document.getElementById('account-provider-display');
+  const changePwBtn = document.getElementById('account-change-password-btn');
+  if (!session || !session.user) return;
+  if (emailEl) emailEl.textContent = session.user.email || '(no email on file)';
+  const provider = (session.user.app_metadata && session.user.app_metadata.provider) || 'email';
+  if (providerEl) {
+    const label = provider === 'email' ? 'Signed in with email' : 'Signed in with ' + provider.charAt(0).toUpperCase() + provider.slice(1);
+    providerEl.textContent = label;
+  }
+  if (changePwBtn) changePwBtn.style.display = provider === 'email' ? 'block' : 'none';
+  updateLastBackupDisplay();
+}
+
+function openChangePassword() {
+  document.getElementById('change-password-new').value = '';
+  document.getElementById('change-password-confirm').value = '';
+  const statusEl = document.getElementById('change-password-status');
+  if (statusEl) statusEl.style.display = 'none';
+  openModalEl('modal-change-password');
+}
+
+async function submitChangePassword() {
+  const newPw = document.getElementById('change-password-new').value;
+  const confirmPw = document.getElementById('change-password-confirm').value;
+  const statusEl = document.getElementById('change-password-status');
+  const btn = document.getElementById('change-password-submit-btn');
+
+  if (!newPw || !confirmPw) {
+    if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = 'Enter and confirm your new password.'; statusEl.style.display = 'block'; }
+    return;
+  }
+  if (newPw !== confirmPw) {
+    if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = 'Passwords don\u2019t match.'; statusEl.style.display = 'block'; }
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  try {
+    const { error } = await supabase.auth.updateUser({ password: newPw });
+    if (error) throw error;
+    if (statusEl) { statusEl.style.color = 'var(--accent)'; statusEl.textContent = '\u2713 Password updated.'; statusEl.style.display = 'block'; }
+    setTimeout(() => closeModal('modal-change-password'), 900);
+  } catch (err) {
+    if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = (err && err.message) || 'Could not update password.'; statusEl.style.display = 'block'; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// CLOUD SNAPSHOT BACKUP & RESTORE — Supabase Storage, my-dream-clean-backups
+// bucket. No relational tables for this app (see SUPABASE-MIGRATION-PLAN.md)
+// — this is the only server-side mechanism, mirroring the local
+// export/import path above via the same buildBackupPayload()/
+// applyBackupPayload() helpers so the two can never drift apart. Path
+// inside the bucket is {user_id}/{date}.json — no app-slug prefix needed,
+// since the bucket itself is already scoped to this app.
+// ════════════════════════════════════════════════════════════════════════
+
+function snapshotPath(userId, date) {
+  return `${userId}/${date}.json`;
+}
+
+async function uploadSnapshot() {
+  if (!supabase || !_authResolvedSession) throw new Error('Not signed in');
+  const userId = _authResolvedSession.user.id;
+  const date = getLocalToday();
+  const data = await buildBackupPayload();
+  const payload = JSON.stringify(data, null, 2);
+  const { error } = await supabase.storage
+    .from(BACKUP_BUCKET)
+    .upload(snapshotPath(userId, date), new Blob([payload], { type: 'application/json' }), { upsert: true });
+  if (error) throw error;
+  localStorage.setItem('mdc_last_snapshot_date', date);
+}
+
+// Opportunistic daily backup, piggybacked on app boot while signed in and
+// online — same reasoning as BLOC's version: there's no reliable way to
+// run a real scheduled job from a browser tab that may not be open.
+async function maybeUploadOpportunisticSnapshot() {
+  if (!supabase || !_authResolvedSession) return;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  const last = localStorage.getItem('mdc_last_snapshot_date');
+  if (last === getLocalToday()) return;
+  try {
+    await uploadSnapshot();
+    updateLastBackupDisplay();
+  } catch (err) {
+    console.warn('[sync] opportunistic snapshot upload failed, will retry next check:', err && err.message);
+  }
+}
+
+// First-ever cloud backup for a device that's never uploaded one — covers
+// both a genuinely new sign-up and an existing device signing in to this
+// project for the first time. Upload-only; never touches local data.
+async function maybeUploadSnapshotZero() {
+  if (localStorage.getItem('mdc_last_snapshot_date')) return;
+  if (!supabase || !_authResolvedSession) return;
+  try {
+    await uploadSnapshot();
+    updateLastBackupDisplay();
+  } catch (err) {
+    console.warn('[sync] snapshot-zero upload failed, will retry next launch:', err && err.message);
+  }
+}
+
+async function listSnapshots() {
+  if (!supabase || !_authResolvedSession) throw new Error('Not signed in');
+  const userId = _authResolvedSession.user.id;
+  const { data, error } = await supabase.storage.from(BACKUP_BUCKET).list(userId, { sortBy: { column: 'name', order: 'desc' } });
+  if (error) throw error;
+  return (data || []).map(f => f.name.replace(/\.json$/, ''));
+}
+
+async function restoreFromSnapshot(date) {
+  if (!supabase || !_authResolvedSession) throw new Error('Not signed in');
+  const userId = _authResolvedSession.user.id;
+  const { data, error } = await supabase.storage.from(BACKUP_BUCKET).download(snapshotPath(userId, date));
+  if (error) throw error;
+  const text = await data.text();
+  const parsed = JSON.parse(text);
+  const missing = DB_STORES.filter(store => !Array.isArray(parsed[store]));
+  if (missing.length > 0) throw new Error('Invalid backup file — does not look like a My Dream Clean export.');
+  await applyBackupPayload(parsed);
+  window.location.reload();
+}
+
+function updateLastBackupDisplay() {
+  const last = localStorage.getItem('mdc_last_snapshot_date');
+  const text = last ? `Last cloud backup: ${formatDateUK(last)}` : 'No cloud backup yet';
+  const el = document.getElementById('account-last-backup-display');
+  if (el) el.textContent = text;
+}
+
+// Shared "Back Up to Cloud Now" handler — mirrors BLOC's handleBackupNow().
+async function handleBackupNow(btnId, statusId) {
+  const btn = document.getElementById(btnId);
+  const statusEl = document.getElementById(statusId);
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Backing up…';
+  try {
+    await uploadSnapshot();
+    updateLastBackupDisplay();
+    statusEl.style.display = 'block';
+    statusEl.style.color = 'var(--accent)';
+    statusEl.textContent = '✓ Backed up';
+  } catch (err) {
+    statusEl.style.display = 'block';
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '✕ ' + (err && err.message || 'Backup failed — try again.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+async function openRestorePicker() {
+  const listEl = document.getElementById('restore-picker-list');
+  const lastEl = document.getElementById('restore-picker-last-backup');
+  if (lastEl) {
+    const last = localStorage.getItem('mdc_last_snapshot_date');
+    lastEl.textContent = last ? `Last cloud backup: ${formatDateUK(last)}` : 'No cloud backup yet';
+  }
+  listEl.innerHTML = '<div style="font-size:12px;color:var(--text2);">Loading…</div>';
+  openModalEl('modal-restore-picker');
+  try {
+    const dates = await listSnapshots();
+    if (!dates.length) {
+      listEl.innerHTML = '<div style="font-size:12px;color:var(--text2);">No cloud backups yet.</div>';
+      return;
+    }
+    listEl.innerHTML = '';
+    dates.forEach(date => {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-secondary';
+      btn.style.width = '100%';
+      btn.style.textAlign = 'left';
+      btn.textContent = formatDateUK(date);
+      btn.onclick = () => handleRestoreSnapshot(date);
+      listEl.appendChild(btn);
+    });
+  } catch (err) {
+    listEl.innerHTML = `<div style="font-size:12px;color:var(--red);">✕ ${(err && err.message) || 'Could not load backups.'}</div>`;
+  }
+}
+
+async function handleRestoreSnapshot(date) {
+  const label = formatDateUK(date);
+  if (!confirm(`Replace everything on this device with the ${label} snapshot? This can't be undone locally.`)) return;
+  try {
+    await restoreFromSnapshot(date); // reloads the page on success
+  } catch (err) {
+    alert('Restore failed: ' + ((err && err.message) || 'unknown error'));
+  }
+}
+
 // ── Boot ──────────────────────────────────────────────────────────
-Promise.all([loadClients(), ensureAppSettings(), loadAppointments(), loadInvoices(), loadReceipts()]).then(async () => {
-  await dropboxHandleRedirect(); // no-op unless the page was just reloaded via a Dropbox OAuth redirect
-  if (document.getElementById('screen-clients').classList.contains('active')) renderClients();
-  if (document.getElementById('screen-home').classList.contains('active')) renderHome();
-  if (document.getElementById('screen-diary').classList.contains('active')) renderDiaryWeek();
-  if (document.getElementById('screen-invoices').classList.contains('active')) renderInvoices();
-  if (document.getElementById('screen-summary').classList.contains('active')) renderSummary();
-  if (document.getElementById('screen-settings').classList.contains('active')) renderSettings();
-});
+// Everything that used to run unconditionally at parse time now waits for
+// a confirmed session first — substance unchanged, just relocated behind
+// the auth gate. onAuthResolved() above calls this once, the first time a
+// real session resolves; _bootStarted guards against a later
+// onAuthStateChange event (e.g. a token refresh) running it twice.
+function runBoot() {
+  return Promise.all([loadClients(), ensureAppSettings(), loadAppointments(), loadInvoices(), loadReceipts()]).then(async () => {
+    await dropboxHandleRedirect(); // no-op unless the page was just reloaded via a Dropbox OAuth redirect
+    if (document.getElementById('screen-clients').classList.contains('active')) renderClients();
+    if (document.getElementById('screen-home').classList.contains('active')) renderHome();
+    if (document.getElementById('screen-diary').classList.contains('active')) renderDiaryWeek();
+    if (document.getElementById('screen-invoices').classList.contains('active')) renderInvoices();
+    if (document.getElementById('screen-summary').classList.contains('active')) renderSummary();
+    if (document.getElementById('screen-settings').classList.contains('active')) renderSettings();
+    maybeUploadOpportunisticSnapshot();
+  });
+}
+
+// Kicks off the Supabase client + initial session check. Called once,
+// immediately — createClient()/getSession() don't touch the DOM, so this
+// doesn't need to wait for anything, and starting it as early as possible
+// keeps the gate's resolve time short for a returning, already-signed-in
+// person. Safe to call here since this script tag sits at the end of
+// <body>, so the DOM (including #auth-gate and #auth-provider-list) is
+// already fully parsed by the time this line runs.
+initSupabaseAuth();
 </script>
 
 </body>
