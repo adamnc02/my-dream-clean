@@ -1,4 +1,7 @@
 <!DOCTYPE html>
+<!-- My Dream Clean — v1.1.0. No version was tracked before this release;
+     bump this comment (and README.md's Status line) on each future
+     delivery so changes are traceable without digging through git log. -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -643,9 +646,10 @@ h3 {
 
 /* Drag landing-position indicator — a single shared element moved via
    insertBefore/after to track the nearest insertion point as the user
-   drags a chip up/down within a day column. Purely visual: the actual
-   move happens in reorderOccurrencesOnDate on drop. Kept out of layout
-   (display:none) until a same-day drag is in progress. */
+   drags a chip up/down within whichever day column it's currently
+   hovering over. Purely visual: the actual move happens in
+   reorderOccurrencesOnDate / moveOccurrenceAcrossDays on drop. Kept out
+   of layout (display:none) until a drag is in progress. */
 .diary-drop-indicator {
   display: none;
   height: 3px;
@@ -654,6 +658,17 @@ h3 {
   box-shadow: 0 0 0 2px rgba(var(--surface-rgb), 0.9);
 }
 .diary-drop-indicator.showing { display: block; }
+
+/* Whole-column highlight for the day currently being dragged over —
+   lets a cross-day drag show two things at once: which DAY it would
+   land on (this) and which SLOT within that day (.diary-drop-indicator
+   above). Applied/cleared purely in JS as the pointer moves; never set
+   on a past or holiday column since those can't accept a drop. */
+.diary-day-col.drag-over-day {
+  outline: 1.5px dashed var(--accent2);
+  outline-offset: -1px;
+  border-radius: var(--r-sm);
+}
 
 .monday-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; cursor: pointer; }
 .monday-row:active { opacity: 0.7; }
@@ -1795,19 +1810,22 @@ h3 {
 </div>
 
 <!-- ════════════════════════════════════════
-     MODAL: REORDER SCOPE — shown on drop when a drag-to-reorder on
-     Diary touches a recurring (template) appointment, since that
-     reorder could mean "just today" or "every future occurrence too".
-     A pure ad-hoc-only reorder skips this and applies immediately —
-     see diaryReorderTouchesTemplate().
+     MODAL: REORDER SCOPE — shown on drop when a drag on Diary (whether
+     a same-day reorder or a drag onto a different day) touches a
+     recurring (template) appointment, since that change could mean
+     "just today" or "every future occurrence too". A pure ad-hoc-only
+     drag skips this and applies immediately — see
+     diaryReorderTouchesTemplate() / diaryCrossDayTouchesTemplate().
+     Shared by both operations; the title/hint text is swapped in JS
+     (openReorderScopeModal / openCrossDayMoveScopeModal) to match.
 ═══════════════════════════════════════════ -->
 <div class="modal-overlay" id="modal-reorder-scope">
   <div class="modal-sheet">
     <div class="modal-handle-row">
       <div class="modal-handle"></div>
     </div>
-    <div class="modal-title">Apply this reorder to…</div>
-    <div class="form-hint" style="margin-bottom:18px;">This slot is part of a recurring appointment. Should the new order apply just to today, or to this and every future occurrence?</div>
+    <div class="modal-title" id="reorder-scope-title">Apply this reorder to…</div>
+    <div class="form-hint" id="reorder-scope-hint" style="margin-bottom:18px;">This slot is part of a recurring appointment. Should the new order apply just to today, or to this and every future occurrence?</div>
     <button class="btn btn-primary" style="width:100%;" onclick="applyReorderScope('once')">Just this occurrence</button>
     <div style="height:10px;"></div>
     <button class="btn btn-secondary" style="width:100%;" onclick="applyReorderScope('future')">All future occurrences</button>
@@ -3010,7 +3028,7 @@ function startDiaryTour() {
       // two tooltips over the same element back to back felt repetitive.
       { targetId: 'diary-grid', screen: 'diary',
         title: 'Add, edit, and reorder appointments',
-        body: 'Tap any empty slot to add a new client, or tap an existing appointment to edit it. Appointments can also be dragged to reorder within a day. Past days are locked \u2014 you can\u2019t edit history here.' },
+        body: 'Tap any empty slot to add a new client, or tap an existing appointment to edit it. Appointments can also be dragged \u2014 up and down to reorder within a day, or sideways onto another day to move them there. Past days are locked \u2014 you can\u2019t edit history here.' },
       // Opens the Edit Appointment modal for a real occurrence found in
       // the currently-viewed week, favouring a recurring one since
       // that's the only case where both cancel options show at once —
@@ -3943,7 +3961,12 @@ function handleDiaryDragStart(idx, dateStr, event) {
 function handleDiaryDragEnd() {
   document.querySelectorAll('.diary-chip.dragging').forEach(el => el.classList.remove('dragging'));
   hideDiaryDropIndicator();
+  clearDiaryDayHighlight();
   _diaryDragFrom = null;
+}
+
+function clearDiaryDayHighlight() {
+  document.querySelectorAll('.diary-day-col.drag-over-day').forEach(el => el.classList.remove('drag-over-day'));
 }
 
 function getDiaryDropIndicatorEl() {
@@ -3986,10 +4009,18 @@ function diaryDragToIdx(beforeIdx, fromIdx, count) {
 function handleDiaryColDragOver(event, dateStr) {
   event.preventDefault(); // required for drop to fire at all
   const col = event.currentTarget;
-  if (!_diaryDragFrom || _diaryDragFrom.date !== dateStr || isPastDate(dateStr)) {
+  if (!_diaryDragFrom || isPastDate(dateStr) || isHolidayDate(dateStr)) {
     hideDiaryDropIndicator();
+    clearDiaryDayHighlight();
     return;
   }
+  // Two indicators at once: which DAY it would land on (the column
+  // highlight — cleared everywhere and reapplied to whichever column is
+  // currently under the pointer) and which SLOT within that day (the
+  // drop-indicator line, same mechanism as before, now just as valid
+  // when the pointer is over a different day than the drag started on).
+  clearDiaryDayHighlight();
+  col.classList.add('drag-over-day');
   const chips = Array.from(col.querySelectorAll('.diary-chip'));
   const beforeIdx = diaryDragBeforeIndex(event.clientY, chips);
   const indicator = getDiaryDropIndicatorEl();
@@ -4006,25 +4037,57 @@ function handleDiaryColDragOver(event, dateStr) {
 function handleDiaryColDrop(event, dateStr) {
   event.preventDefault();
   hideDiaryDropIndicator();
+  clearDiaryDayHighlight();
   const p = event.dataTransfer.getData('text/plain').split('|');
   const fromIdx = parseInt(p[0]);
   const fromDate = p[1];
   _diaryDragFrom = null;
-  if (fromDate !== dateStr) return; // cross-day drag isn't supported — silent no-op, same as before
+  if (isPastDate(dateStr) || isHolidayDate(dateStr)) return; // can't land on a locked or holiday day
   const col = event.currentTarget;
   const chips = Array.from(col.querySelectorAll('.diary-chip'));
   const beforeIdx = diaryDragBeforeIndex(event.clientY, chips);
-  const toIdx = diaryDragToIdx(beforeIdx, fromIdx, chips.length);
-  if (fromIdx === toIdx) return;
-  // Only recurring (template) appointments have a meaningful "just today
-  // vs every future occurrence" choice — a pure ad-hoc-only reorder has
-  // no future to affect, so it applies immediately with no prompt, same
-  // as before this feature existed.
-  if (diaryReorderTouchesTemplate(dateStr, fromIdx, toIdx)) {
-    openReorderScopeModal(dateStr, fromIdx, toIdx);
+
+  if (fromDate === dateStr) {
+    const toIdx = diaryDragToIdx(beforeIdx, fromIdx, chips.length);
+    if (fromIdx === toIdx) return;
+    // Only recurring (template) appointments have a meaningful "just
+    // today vs every future occurrence" choice — a pure ad-hoc-only
+    // reorder has no future to affect, so it applies immediately with
+    // no prompt, same as before this feature existed.
+    if (diaryReorderTouchesTemplate(dateStr, fromIdx, toIdx)) {
+      openReorderScopeModal(dateStr, fromIdx, toIdx);
+    } else {
+      reorderOccurrencesOnDate(dateStr, fromIdx, toIdx, renderDiaryWeek, 'future');
+    }
   } else {
-    reorderOccurrencesOnDate(dateStr, fromIdx, toIdx, renderDiaryWeek, 'future');
+    // Cross-day: dropped in a different day column's chips array, which
+    // (unlike the same-day case) never contains the dragged chip itself,
+    // so beforeIdx is already the correct insertion index — no splice
+    // adjustment needed.
+    if (diaryCrossDayTouchesTemplate(fromDate, fromIdx, dateStr, beforeIdx)) {
+      openCrossDayMoveScopeModal(fromDate, fromIdx, dateStr, beforeIdx);
+    } else {
+      moveOccurrenceAcrossDays(fromDate, fromIdx, dateStr, beforeIdx, renderDiaryWeek, 'future');
+    }
   }
+}
+
+// True if moving the dragged occurrence from (fromDate, fromIdx) to
+// (toDate, before toBeforeIdx) would change a recurring (template)
+// appointment's position or day — either the dragged appointment itself,
+// or another template that gets bumped along the way in either column
+// (everyone after fromIdx shifts up in fromDate; everyone at/after
+// toBeforeIdx shifts down in toDate). Mirrors diaryReorderTouchesTemplate,
+// just across two day columns instead of one.
+function diaryCrossDayTouchesTemplate(fromDate, fromIdx, toDate, toBeforeIdx) {
+  const occFrom = getOccurrencesForDate(fromDate);
+  const moved = occFrom[fromIdx];
+  if (!moved) return false;
+  if (moved.type === 'template') return true;
+  for (let i = fromIdx + 1; i < occFrom.length; i++) { if (occFrom[i].type === 'template') return true; }
+  const occTo = getOccurrencesForDate(toDate);
+  for (let i = toBeforeIdx; i < occTo.length; i++) { if (occTo[i].type === 'template') return true; }
+  return false;
 }
 
 // True if any appointment within the affected range (the dragged item's
@@ -4038,19 +4101,56 @@ function diaryReorderTouchesTemplate(dateStr, fromIdx, toIdx) {
   return false;
 }
 
-let _reorderScopeContext = null; // { dateStr, fromIdx, toIdx } — set right before the modal opens, read (and cleared) when a choice is made
+let _reorderScopeContext = null; // { kind: 'reorder', dateStr, fromIdx, toIdx } | { kind: 'move', fromDate, fromIdx, toDate, toBeforeIdx } — set right before the modal opens, read (and cleared) when a choice is made. One shared modal for both operations; applyReorderScope routes on `kind`.
 
 function openReorderScopeModal(dateStr, fromIdx, toIdx) {
-  _reorderScopeContext = { dateStr, fromIdx, toIdx };
+  _reorderScopeContext = { kind: 'reorder', dateStr, fromIdx, toIdx };
+  document.getElementById('reorder-scope-title').textContent = 'Apply this reorder to…';
+  document.getElementById('reorder-scope-hint').textContent = 'This slot is part of a recurring appointment. Should the new order apply just to today, or to this and every future occurrence?';
+  openModalEl('modal-reorder-scope');
+}
+
+function openCrossDayMoveScopeModal(fromDate, fromIdx, toDate, toBeforeIdx) {
+  _reorderScopeContext = { kind: 'move', fromDate, fromIdx, toDate, toBeforeIdx };
+  document.getElementById('reorder-scope-title').textContent = 'Apply this day change to…';
+  document.getElementById('reorder-scope-hint').textContent = 'This slot is part of a recurring appointment. Should the new day apply just to this occurrence, or to this and every future occurrence?';
   openModalEl('modal-reorder-scope');
 }
 
 function applyReorderScope(scope) {
   if (!_reorderScopeContext) return;
-  const { dateStr, fromIdx, toIdx } = _reorderScopeContext;
+  const ctx = _reorderScopeContext;
   _reorderScopeContext = null;
   closeModal('modal-reorder-scope');
-  reorderOccurrencesOnDate(dateStr, fromIdx, toIdx, renderDiaryWeek, scope);
+  if (ctx.kind === 'move') {
+    moveOccurrenceAcrossDays(ctx.fromDate, ctx.fromIdx, ctx.toDate, ctx.toBeforeIdx, renderDiaryWeek, scope);
+  } else {
+    reorderOccurrencesOnDate(ctx.dateStr, ctx.fromIdx, ctx.toIdx, renderDiaryWeek, scope);
+  }
+}
+
+// Applies a template-vs-adhoc-aware order change to a single occurrence
+// that isn't itself moving days — just shifting position within a day's
+// list as a side effect of another appointment being inserted/removed
+// nearby. Shared by both reorderOccurrencesOnDate (same-day) and
+// moveOccurrenceAcrossDays (cross-day) so the once-vs-future storage
+// rule (per-date orderOverride vs a forward-dated template edit) only
+// lives in one place.
+function applyOrderForOccurrence(appt, dateStr, newOrder, scope, touchedIds) {
+  if (appt.type === 'template') {
+    if (scope === 'once') {
+      appt.orderOverrides = appt.orderOverrides || {};
+      appt.orderOverrides[dateStr] = newOrder;
+      touchedIds.push(appt.id);
+    } else {
+      const updated = applyTemplateEditForward(appt, dateStr, { slotOrder: newOrder });
+      touchedIds.push(appt.id);
+      if (updated.id !== appt.id) touchedIds.push(updated.id);
+    }
+  } else {
+    appt.slotOrder = newOrder;
+    touchedIds.push(appt.id);
+  }
 }
 
 // ── Shared reorder logic (vertical, within a single day) ─────────────
@@ -4075,21 +4175,86 @@ function reorderOccurrencesOnDate(dateStr, fromIdx, toIdx, refreshFn, scope) {
   occ.forEach((appt, i) => {
     const newOrder = i + 1;
     if (effectiveSlotOrder(appt, dateStr) === newOrder) return;
-    if (appt.type === 'template') {
-      if (scope === 'once') {
-        appt.orderOverrides = appt.orderOverrides || {};
-        appt.orderOverrides[dateStr] = newOrder;
-        touchedIds.push(appt.id);
-      } else {
-        const updated = applyTemplateEditForward(appt, dateStr, { slotOrder: newOrder });
-        touchedIds.push(appt.id);
-        if (updated.id !== appt.id) touchedIds.push(updated.id);
-      }
-    } else {
-      appt.slotOrder = newOrder;
-      touchedIds.push(appt.id);
-    }
+    applyOrderForOccurrence(appt, dateStr, newOrder, scope, touchedIds);
   });
+  persistAppointments(touchedIds).then(refreshFn);
+}
+
+// ── Cross-day move (dragging an appointment onto a different day within
+// the same week view) ───────────────────────────────────────────────
+// An ad-hoc appointment just gets a new `date` — no scope choice needed,
+// same immediacy as an ad-hoc same-day reorder (diaryCrossDayTouchesTemplate
+// already filtered those out before this is ever called with a template
+// involved). A template appointment has no stored date of its own (see
+// getOccurrencesForDate) so moving IT to a different day needs the same
+// once-vs-future choice as a same-day reorder, but it means something
+// different depending on the answer:
+//   'once'   — cancel this single occurrence on its original day (the
+//              same cancelledDates mechanism the existing single-
+//              occurrence cancel flow uses) and create a standalone
+//              ad-hoc appointment on the new day. The template's own
+//              recurring day is never touched.
+//   'future' — the template's dayOfWeek itself changes, from this
+//              occurrence's date forward, via the same from/to
+//              versioning (applyTemplateEditForward) every other
+//              forward-dated template edit already uses.
+// Other appointments whose position shifts as a result (in either day)
+// are reindexed via applyOrderForOccurrence — the modal's scope choice,
+// when needed, applies uniformly to every template touched by the move,
+// same principle as the same-day reorder above.
+function moveOccurrenceAcrossDays(fromDate, fromIdx, toDate, toBeforeIdx, refreshFn, scope) {
+  if (isPastDate(fromDate) || isPastDate(toDate) || isHolidayDate(toDate)) return;
+
+  const occFrom = getOccurrencesForDate(fromDate);
+  const moved = occFrom[fromIdx];
+  if (!moved) return;
+  const occTo = getOccurrencesForDate(toDate);
+
+  const remainingFrom = occFrom.slice();
+  remainingFrom.splice(fromIdx, 1);
+  const insertAt = Math.min(toBeforeIdx, occTo.length);
+  const movedNewOrder = insertAt + 1;
+
+  const touchedIds = [];
+  let movedReplacement; // whichever record now represents the moved appointment on toDate
+
+  if (moved.type === 'adhoc') {
+    moved.date = toDate;
+    moved.slotOrder = movedNewOrder;
+    touchedIds.push(moved.id);
+    movedReplacement = moved;
+  } else if (scope === 'once') {
+    moved.cancelledDates = moved.cancelledDates || [];
+    if (!moved.cancelledDates.includes(fromDate)) moved.cancelledDates.push(fromDate);
+    touchedIds.push(moved.id);
+    movedReplacement = {
+      id: uuid(), type: 'adhoc', template: null, dayOfWeek: null, date: toDate,
+      clientId: moved.clientId, durationHours: moved.durationHours, slotOrder: movedNewOrder,
+      effectiveFrom: null, effectiveTo: null, cancelledDates: [],
+    };
+    appState.appointments.push(movedReplacement);
+    touchedIds.push(movedReplacement.id);
+  } else { // 'future' — the recurring slot itself now lands on the new day of week
+    movedReplacement = applyTemplateEditForward(moved, fromDate, { dayOfWeek: getDayOfWeekKey(toDate), slotOrder: movedNewOrder });
+    touchedIds.push(moved.id);
+    if (movedReplacement.id !== moved.id) touchedIds.push(movedReplacement.id);
+  }
+
+  const newOccTo = occTo.slice();
+  newOccTo.splice(insertAt, 0, movedReplacement);
+
+  remainingFrom.forEach((appt, i) => {
+    const newOrder = i + 1;
+    if (effectiveSlotOrder(appt, fromDate) === newOrder) return;
+    applyOrderForOccurrence(appt, fromDate, newOrder, scope, touchedIds);
+  });
+  newOccTo.forEach((appt, i) => {
+    if (appt === movedReplacement) return; // already positioned above
+    const newOrder = i + 1;
+    if (effectiveSlotOrder(appt, toDate) === newOrder) return;
+    applyOrderForOccurrence(appt, toDate, newOrder, scope, touchedIds);
+  });
+
   persistAppointments(touchedIds).then(refreshFn);
 }
 
@@ -4305,8 +4470,13 @@ function deleteReceipt() {
 // tagged with its Week A/B letter, so she can jump straight to "the
 // next Week A" to make a change take hold there. Days run left-to-
 // right as columns, slots run top-to-bottom within each column —
-// dragging reorders vertically within a single day, same mechanism as
-// Home, just addressed by that column's specific date.
+// dragging reorders vertically within a day (reorderOccurrencesOnDate)
+// and, since it can land in a different column, also moves an
+// appointment to a different day within the same week view
+// (moveOccurrenceAcrossDays). Either way the drop position is shown by
+// two indicators together: the whole day column lights up
+// (.drag-over-day) and a line shows the exact slot within it
+// (.diary-drop-indicator) — see handleDiaryColDragOver.
 // ════════════════════════════════════════════════
 let diaryWeekMonday = null;
 
