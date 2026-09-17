@@ -8,6 +8,8 @@ Built for iPhone use (added to the home screen as a PWA). Single file: `mdc-inde
 
 ## Status
 
+**Version 1.1.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on every delivery.
+
 All eight planned build stages are complete:
 
 | Stage | Area | Status |
@@ -59,7 +61,7 @@ Neither key is a secret in the traditional sense (both are safe to type into the
 ## What's in the app
 
 - **Home** — today's (or any day's) appointments at a glance: client, duration, and the address that was current on that date. Quick-add button for logging a receipt on the spot.
-- **Diary** — the recurring weekly planner. Two-week A/B rotation, drag-to-reorder within a day, one-off adjustments (cancel/move a single occurrence) that never touch the recurring template.
+- **Diary** — the recurring weekly planner. Two-week A/B rotation; drag-to-reorder within a day, or drag onto a different day to move an appointment there — the day column under the cursor highlights and a line shows exactly where it'll land within that day. One-off adjustments (cancel/move a single occurrence, including a single one-off day change) never touch the recurring template.
 - **Clients** — domestic or commercial, with versioned hourly rate and address (so past diary days and past invoices always reflect what was true at the time, even after a later change), payment method, and the "Is Invoiced" flag that determines whether they ever appear on the Invoices page.
 - **Invoices** — a live "Ready to Send" queue computed from completed appointments (no manual data entry), PDF generation with your logo/business details/bank instructions, sequential per-financial-year numbering, a pre-filled email send flow, and Outstanding → Paid status tracking.
 - **Summary** — Day/Week/Month/Year reporting: revenue, costs (from receipts), mileage with the tiered UK allowance (45p/mile up to 10,000 miles per financial year, 25p after), and a rough profit estimate. The full receipts log (add/edit/delete) lives here.
