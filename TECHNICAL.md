@@ -13,6 +13,7 @@ built and why. **Update this alongside README.md whenever a change touches how s
 3. [Dates, financial years and tax years](#3-dates-financial-years-and-tax-years)
 4. [Versioned fields](#4-versioned-fields)
 5. [The appointment model](#5-the-appointment-model)
+    - [5.1 Historic corrections (v1.3.0)](#51-historic-corrections-v130)
 6. [Diary — drag/drop model](#6-diary--dragdrop-model)
 7. [Shell, navigation and modals](#7-shell-navigation-and-modals)
 8. [Design system](#8-design-system)
@@ -162,6 +163,58 @@ rather than today's values — so what was true at the time is what counts. It e
 precisely so the three cannot drift apart; if a new surface needs the same question answered, call
 it rather than re-deriving it.
 
+### 5.1 Historic corrections (v1.3.0)
+
+Before v1.3.0 a past occurrence could not be opened at all: `renderDiaryWeek` rendered past chips
+with no `onclick`, and the ad-hoc edit/delete paths bailed out with `"Past appointments can't be
+edited."`. The only way to fix a wrong historic duration was to export the JSON backup, hand-edit
+it and re-import — which is a **full replace** of everything on the device (§19), losing anything
+done since the export. That is a bad trade for a one-figure correction, so the lock was lifted on
+the Diary grid only, and replaced with two guard rails.
+
+**Guard rail 1 — a past edit is always a single-occurrence correction.**
+`saveAppointment` intercepts `isPastDate(ctxDate) && appt.type === 'template'` and routes to
+`applyHistoricOccurrenceCorrection`, *not* `applyTemplateEditForward`. This distinction is the
+whole point: `applyTemplateEditForward` with a past effective date would split the template there
+and apply the change to **every occurrence from that date to today** — the exact opposite of a
+one-off fix. The modal also hides the "Changes apply from" picker on a past edit, so no past
+effective date can reach the forward-edit path at all.
+
+`applyHistoricOccurrenceCorrection` has two sub-cases:
+
+| Condition | What happens | Why |
+|---|---|---|
+| `templateResolvesToSingleDate(appt, date)` | Edit the template record **in place** | The record already governs only this one date, so it *is* the occurrence. No cancel/ad-hoc pair needed, and the data stays tidy. |
+| otherwise | Add the date to `cancelledDates` and push a standalone `adhoc` record carrying the correction | The template also governs other dates, which must not change. Same pattern `moveOccurrenceAcrossDays` uses for scope `'once'`. |
+
+`templateResolvesToSingleDate` returns `false` immediately for an open-ended record (no
+`effectiveTo`), since it always governs future dates; that short-circuit also bounds the
+day-by-day walk of the effective window. `slotOrder` is carried over via `effectiveSlotOrder`, so a
+corrected entry keeps its position in that day's running order (which mileage depends on, §16).
+
+**Guard rail 2 — the invoice consequence is stated before the change, not after.**
+Invoices snapshot their `lineItems` at generation time and are never recomputed, and the app has
+no way to delete or amend one. So `showHistoricNotice` reads the situation and shows one of three
+severities in the modal:
+
+| Case | Notice |
+|---|---|
+| `invoiceCoveringDate` finds an invoice for that client + month | **Red.** Names the invoice number and total, and says plainly that it will not update and needs correcting separately. |
+| `isInvoicedClientOnDate` is true but no invoice generated yet | **Amber.** The change will be picked up when that month's invoice is generated. |
+| Client is not invoiced (cash / £0 rate) | **Amber.** Summary figures for that period will change. |
+
+Invoice periods are plain calendar months (`periodKey` is `'YYYY-MM'`), so "does an invoice already
+cover this date" is a direct `periodKey` match rather than a date-range walk. `isInvoicedClientOnDate`
+resolves the client snapshot **on the appointment's date**, not today, so a client since moved to
+cash still warns about a month they were invoiced for.
+
+**What stays locked.** Adding to a past day, dragging, reordering, cross-day moves, and deleting a
+recurring slot from a past date (which would truncate history that may already be invoiced — the
+Delete button is hidden entirely on a historic template edit). Cancelling a single past occurrence
+*is* allowed — "this visit didn't happen" is a legitimate correction — with confirm wording that
+spells out the Summary and invoice consequences. Home is unaffected: it is view-only on every date
+by design (§9), not because of any past-date rule.
+
 ---
 
 ## 6. Diary — drag/drop model
@@ -217,8 +270,10 @@ dragged, so `beforeIdx` computed there is already the correct insertion index. N
 
 A drop **is** allowed onto a day already past its ~10-hour display capacity — the "+" empty-slot
 hint is cosmetic everywhere else in the app too, and nothing else blocks overbooking a day. The
-only drop targets refused outright are a **past day** (immutable, the same rule as everywhere else)
-and a **holiday day** (which never renders slots to drop into in the first place).
+only drop targets refused outright are a **past day** (unreschedulable — see §5.1; a past chip is
+tappable for a correction as of v1.3.0 but is never draggable, and `moveOccurrenceAcrossDays`
+refuses past dates on both sides regardless) and a **holiday day** (which never renders slots to
+drop into in the first place).
 
 > **This drag idiom has been ported outward.** BLOC's plan page and Listly's shopping lists both
 > use the landing-indicator visual from here. Listly could not reuse the *mechanism*, though: HTML5
@@ -592,7 +647,11 @@ Promise.all([ loadClients, ensureAppSettings, loadAppointments, loadInvoices, lo
 - **`escapeHtml` every interpolated value.** The render functions write `innerHTML`.
 - **Weekends and holidays are excluded consistently** — by the diary, `dayUsedHours`, the invoice
   queue and mileage. A new surface that walks dates must do the same.
-- **The past is immutable.** `isPastDate` gates every edit path that could rewrite history.
+- **The past is unreschedulable, not unwritable** (v1.3.0 — see §5.1). `isPastDate` still gates
+  every path that would *move* history: drag, reorder, cross-day move, adding to a past day, and
+  truncating a recurring slot from a past date. A single-occurrence *correction* is allowed, and
+  must route through `applyHistoricOccurrenceCorrection` — never `applyTemplateEditForward`, which
+  with a past effective date would rewrite every occurrence from then to now.
 - **A failed integration must degrade, never block.** Mileage, postcode lookup, Dropbox and the
   cloud snapshot all return `null` or warn, and the app keeps working.
 - **Row identity matters for templates.** A template occurrence has no stored date, so never build
@@ -605,7 +664,7 @@ Promise.all([ loadClients, ensureAppSettings, loadAppointments, loadInvoices, lo
 
 ## 23. Versioning
 
-No version was tracked before **v1.1.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
+No version was tracked before **v1.1.0**. Current: **v1.3.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
 the top of `index.html` and the **Version** line under README's `## Status` **together, on every
 delivery**.
 
