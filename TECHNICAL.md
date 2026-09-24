@@ -518,6 +518,13 @@ the outstanding amount stays visible. Reconciling it is manual.
 business details and address as they were on the statement date, client name and billing address,
 the line items, the total, and the bank payment instructions.
 
+The line-item table is **Date / Qty (hrs) / Total** — the per-hour **Price column was dropped at
+Ella's request on 2026-09-24**. `rate` is still stored on every line item and must stay: it is what
+`computeInvoiceFigures` recomputes against, which is the basis of drift detection (§12.1). Dropping
+it from the record would break void/re-issue. This is presentation only. The in-app expanded invoice
+row (`invoiceLineItemsHtml`) still shows `£x/hr`, deliberately — that view is for Ella, not the
+client.
+
 **The PDF is never stored** — only the record is, and the PDF is rebuilt from it on demand for
 Preview, Share and every Dropbox upload. That is what makes voiding cheap: setting `status:'void'`
 makes every copy the app produces from then on come out stamped, with no stored file to chase.

@@ -5996,10 +5996,15 @@ function buildInvoicePdfBlob(invoice, client) {
   doc.text('Statement date: ' + formatDateUK(invoice.statementDate), margin, y); y += 14;
   doc.text('Invoice: ' + invoice.invoiceNumber, margin, y); y += 24;
 
+  // Three columns: Date, Qty, Total. The per-hour Price column was dropped
+  // at Ella's request (2026-09-24) — the client is buying a visit, not an
+  // hourly rate, and showing the rate invites a negotiation about it. The
+  // rate is still STORED on every line item: computeInvoiceFigures needs it
+  // to recompute a period, which is what drift detection compares against
+  // (§12.1). This is a presentation change only.
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
   doc.text('Date', margin, y);
-  doc.text('Qty (hrs)', margin + 180, y);
-  doc.text('Price', margin + 280, y);
+  doc.text('Qty (hrs)', margin + 200, y);
   doc.text('Total', margin + 380, y);
   y += 6;
   doc.setLineWidth(0.5); doc.line(margin, y, tableRight, y);
@@ -6008,8 +6013,7 @@ function buildInvoicePdfBlob(invoice, client) {
   doc.setFont('helvetica', 'normal');
   invoice.lineItems.forEach(li => {
     doc.text(formatDateUK(li.date), margin, y);
-    doc.text(String(li.hours), margin + 180, y);
-    doc.text('£' + formatCurrency(li.rate), margin + 280, y);
+    doc.text(String(li.hours), margin + 200, y);
     doc.text('£' + formatCurrency(li.total), margin + 380, y);
     y += 16;
     if (y > 760) { doc.addPage(); y = margin; }
