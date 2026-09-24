@@ -425,7 +425,19 @@ A client/month pair enters the queue when all of these hold:
   every downstream use is automatically safe rather than needing its own escaping.
 - `invoiceFilename(invoice, client)` is deliberately different from the invoice *number*: it always
   uses the **full** client name plus the invoiced month, so a flat folder of PDFs is identifiable
-  without opening each one.
+  without opening each one. It ends with `invoiceReference(invoice)` — the bare `<FY>-<NNN>` tail —
+  **not** the whole invoice number, because the number leads with a client label and the filename
+  already starts with the client's name. Pasting the number on whole repeated it:
+
+  ```
+  before:  Howdens Altrincham - September 2026 - Howdens Altrincham - 2026-27-001.pdf
+  after:   Howdens Altrincham - September 2026 - 2026-27-001.pdf
+  ```
+
+  `invoiceReference` derives the tail with an end-anchored match rather than storing it, so it works
+  for records written before it existed, and falls back to the whole number if the shape is not
+  recognised — a filename is never worth throwing for. Fixed in v1.4.0; note that it **changes the
+  Dropbox path**, so any PDF archived under the old shape is not overwritten by a later re-upload.
 
 ### Lifecycle
 

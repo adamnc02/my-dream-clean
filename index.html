@@ -5261,12 +5261,32 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 // domestic or commercial alike) plus the invoiced month, so a flat
 // folder of PDFs on-device is identifiable without opening each one.
 // Already slash-safe since invoice.invoiceNumber no longer contains one.
+// The bare reference out of an invoice number — "2026-27-001" from
+// "Howdens Altrincham - 2026-27-001".
+//
+// invoiceNumber deliberately leads with a client label (full registered
+// name for a commercial client, "J Smith" for a domestic one), because
+// that is what the spec wants printed on the document. The FILENAME
+// already starts with the client's full name, so pasting the whole
+// invoice number on the end repeated it:
+//   "Howdens Altrincham - September 2026 - Howdens Altrincham - 2026-27-001.pdf"
+// Stripping back to the reference gives the intended shape instead:
+//   "Howdens Altrincham - September 2026 - 2026-27-001.pdf"
+//
+// Derived rather than stored, so it works for records written before
+// this existed. Anchored to the end and falls back to the whole number
+// if the shape is not recognised — a filename is never worth throwing for.
+function invoiceReference(invoice) {
+  const m = /(\d{4}-\d{2}-\d{3})$/.exec(invoice.invoiceNumber || '');
+  return m ? m[1] : (invoice.invoiceNumber || '');
+}
+
 function invoiceFilename(invoice, client) {
   const snap = client ? clientSnapshotOn(client, invoice.statementDate) : null;
   const name = (snap && snap.name) || 'Client';
   const [, m] = invoice.periodKey.split('-').map(Number);
   const monthName = MONTH_NAMES[(m || 1) - 1];
-  return `${name} - ${monthName} ${invoice.periodKey.slice(0, 4)} - ${invoice.invoiceNumber}`;
+  return `${name} - ${monthName} ${invoice.periodKey.slice(0, 4)} - ${invoiceReference(invoice)}`;
 }
 
 // ── Line items ───────────────────────────────────────────────────────
