@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- My Dream Clean — v1.3.0. No version was tracked before v1.1.0;
+<!-- My Dream Clean — v1.4.0. No version was tracked before v1.1.0;
      bump this comment (and README.md's Status line) on each future
      delivery so changes are traceable without digging through git log. -->
 <html lang="en">
@@ -324,6 +324,34 @@ h3 {
 .chip-amber { background: rgba(217,181,106,0.18); color: #a97f2c; }
 .chip-green { background: rgba(111,191,143,0.18); color: #2e7a4f; }
 .chip-red { background: rgba(226,75,74,0.16); color: var(--red); }
+/* Void — deliberately the most muted chip on the page. A voided invoice is
+   archive material, not something to be drawn back to. */
+.chip-void { background: var(--surface3); color: var(--text3); }
+
+/* ── Drift banner + supersede note (v1.4.0) ──
+   Inside an expanded invoice row. Amber where the invoice can still be
+   fixed silently (never sent), red where the client already holds the old
+   figures and a void/re-issue is the only honest route. Tinted from the
+   same fixed --amber/--red as the historic-edit notice, so the two read as
+   one family across the app. */
+.invoice-drift {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  border-left: 3px solid var(--amber);
+  background: rgba(217,181,106,0.12);
+}
+.invoice-drift-sent { border-left-color: var(--red); background: rgba(226,75,74,0.12); }
+.invoice-drift-title { font-size: 12px; font-weight: 700; color: var(--text); line-height: 1.35; }
+.invoice-drift-body { font-size: 11.5px; color: var(--text2); line-height: 1.45; margin-top: 4px; }
+.invoice-supersede {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text3);
+  font-style: italic;
+}
+.invoice-row-void .row-title, .invoice-row-void .row-sub { color: var(--text3); }
+.invoice-row-void .row-title { text-decoration: line-through; }
 [data-mode="dark"] .chip-amber { color: var(--amber); }
 [data-mode="dark"] .chip-green { color: var(--green); }
 
@@ -5156,7 +5184,12 @@ function getClientCompletedOccurrencesInMonth(clientId, monthKey) {
 function getInvoiceQueue() {
   const today = getLocalToday();
   const currentMonthKey = today.slice(0, 7);
-  const existingPeriods = new Set((appState.invoices || []).map(inv => inv.clientId + '|' + inv.periodKey));
+  // Void invoices deliberately do NOT reserve their period (v1.4.0) — that
+  // is precisely what lets a voided month be re-offered and re-invoiced.
+  // Without this exclusion, voiding would strand the period forever.
+  const existingPeriods = new Set((appState.invoices || [])
+    .filter(inv => inv.status !== 'void')
+    .map(inv => inv.clientId + '|' + inv.periodKey));
   const dismissed = new Set(appState.settings.dismissedQueueEntries || []);
   const queue = [];
 
@@ -5236,19 +5269,35 @@ function invoiceFilename(invoice, client) {
   return `${name} - ${monthName} ${invoice.periodKey.slice(0, 4)} - ${invoice.invoiceNumber}`;
 }
 
-// ── Generate ─────────────────────────────────────────────────────────
-async function generateInvoiceForQueueEntry(clientId, monthKey) {
+// ── Line items ───────────────────────────────────────────────────────
+// The single place an invoice's figures are derived from appointments.
+// Generation and drift detection (v1.4.0) BOTH go through this, so a
+// freshly generated invoice and a recomputed one can never disagree for
+// any reason other than the underlying data actually changing — which is
+// the whole point of the comparison.
+//
+// Rate is resolved at EACH appointment's own date, and each line is
+// rounded up to the nearest 10p individually before summing, exactly as
+// the original generate did.
+function computeInvoiceFigures(clientId, monthKey) {
   const client = appState.clients.find(c => c.id === clientId);
   const { occurred } = getClientCompletedOccurrencesInMonth(clientId, monthKey);
-  if (occurred.length === 0) { alert('No completed appointments found for this period.'); return; }
-
-  const today = getLocalToday();
   const lineItems = occurred.map(o => {
     const snap = clientSnapshotOn(client, o.date) || {};
     const rate = effectiveHourlyRate(snap.rateAmount, snap.rateDurationHours) || 0;
     return { date: o.date, hours: o.hours, rate, total: roundUpToNearestTenPence(o.hours * rate) };
   });
   const total = Math.round(lineItems.reduce((s, li) => s + li.total, 0) * 100) / 100;
+  return { lineItems, total };
+}
+
+// ── Generate ─────────────────────────────────────────────────────────
+async function generateInvoiceForQueueEntry(clientId, monthKey) {
+  const client = appState.clients.find(c => c.id === clientId);
+  const { lineItems, total } = computeInvoiceFigures(clientId, monthKey);
+  if (lineItems.length === 0) { alert('No completed appointments found for this period.'); return; }
+
+  const today = getLocalToday();
 
   const invoice = {
     id: uuid(),
@@ -5272,6 +5321,116 @@ async function generateInvoiceForQueueEntry(clientId, monthKey) {
   dropboxUploadInvoice(pdfBlob, invoice, filename); // silent, non-blocking — never delays or fails the above
 
   renderInvoices();
+}
+
+// ════════════════════════════════════════════════
+// DRIFT, AMEND AND VOID/RE-ISSUE — v1.4.0
+//
+// An invoice's lineItems are a SNAPSHOT taken at generation and are
+// never recalculated (see generateInvoiceForQueueEntry). Summary, by
+// contrast, recomputes revenue live from appointments every render
+// (getRevenueForRange). Those two are independent by design, but it
+// means correcting a historic appointment in an already-invoiced month
+// silently puts the books and the billed figure out of step, with no
+// route back — getInvoiceQueue refuses to re-offer a period that already
+// has an invoice.
+//
+// v1.3.0 made historic corrections easy, so this closes the loop.
+//
+// Drift is DERIVED, never stored: recompute the period and compare with
+// the frozen total. No flag to set at correction time, no migration for
+// existing records, and it catches every cause of divergence — a rate
+// backdated on the client card, a holiday added, a cancelled occurrence
+// reinstated — not just the ones we remembered to instrument.
+function invoiceDrift(invoice) {
+  if (invoice.status === 'void') return null; // a void invoice is history; it is not supposed to track anything
+  const { lineItems, total } = computeInvoiceFigures(invoice.clientId, invoice.periodKey);
+  if (Math.abs(total - invoice.total) < 0.005 && lineItems.length === invoice.lineItems.length) return null;
+  return { lineItems, total, delta: Math.round((total - invoice.total) * 100) / 100 };
+}
+
+// A 'ready' invoice has never left the device, so there is no reason to
+// preserve what it used to say — it is amended in place, keeping its
+// number. Anything already sent goes through voidAndReissueInvoice.
+function amendReadyInvoice(invoiceId) {
+  const invoice = appState.invoices.find(i => i.id === invoiceId);
+  if (!invoice || invoice.status !== 'ready') return;
+  const drift = invoiceDrift(invoice);
+  if (!drift) return;
+  const client = appState.clients.find(c => c.id === invoice.clientId);
+  showConfirm(
+    `Update ${invoice.invoiceNumber} to £${formatCurrency(drift.total)}? `
+    + `It hasn't been sent yet, so it keeps the same invoice number and no void copy is needed.`,
+    async () => {
+      invoice.lineItems = drift.lineItems;
+      invoice.total = drift.total;
+      invoice.amendedDate = getLocalToday();
+      await dbPut('invoices', invoice);
+      // Re-upload so the archived PDF matches the amended record. Same
+      // path and filename (the number is unchanged), so this overwrites
+      // the stale copy rather than leaving two.
+      dropboxUploadInvoice(buildInvoicePdfBlob(invoice, client), invoice, invoiceFilename(invoice, client));
+      renderInvoices();
+    });
+}
+
+// Anything already sent (outstanding/overdue/paid) cannot be edited: the
+// client holds a document bearing that number and total. It is voided and
+// a replacement issued with the NEXT number, the two records linked in
+// both directions so the trail survives a backup round-trip.
+//
+// Deliberate consequence, decided with Adam: voiding a PAID invoice
+// detaches the payment, because the replacement is issued unpaid. The
+// Invoices page surfaces "supersedes <number> (£x already received)" on
+// the new row so the amount actually still owed stays visible.
+function voidAndReissueInvoice(invoiceId) {
+  const oldInv = appState.invoices.find(i => i.id === invoiceId);
+  if (!oldInv || oldInv.status === 'void') return;
+  const client = appState.clients.find(c => c.id === oldInv.clientId);
+  const drift = invoiceDrift(oldInv);
+  if (!drift) return;
+
+  const paidNote = oldInv.status === 'paid'
+    ? ` ${oldInv.invoiceNumber} is marked PAID — the replacement is issued unpaid, so £${formatCurrency(oldInv.total)} already received will need reconciling against it.`
+    : '';
+  showConfirm(
+    `Void ${oldInv.invoiceNumber} (£${formatCurrency(oldInv.total)}) and issue a replacement for £${formatCurrency(drift.total)}? `
+    + `The voided copy is kept, stamped VOID.${paidNote}`,
+    async () => {
+      const today = getLocalToday();
+      const newInv = {
+        id: uuid(),
+        invoiceNumber: nextInvoiceNumber(client),
+        clientId: oldInv.clientId, periodKey: oldInv.periodKey,
+        financialYear: getFinancialYear(today).label,
+        statementDate: today,
+        lineItems: drift.lineItems, total: drift.total,
+        status: 'ready', createdAt: today,
+        supersedes: oldInv.id,
+      };
+      // The pre-void status has to be captured explicitly: once status is
+      // 'void' there is otherwise no way to tell a voided PAID invoice from
+      // a voided unpaid one, and that distinction is exactly what tells
+      // Ella whether money has already come in against it.
+      oldInv.wasPaidWhenVoided = oldInv.status === 'paid';
+      oldInv.statusBeforeVoid = oldInv.status;
+      oldInv.status = 'void';
+      oldInv.voidedDate = today;
+      oldInv.supersededBy = newInv.id;
+
+      await dbPut('invoices', oldInv);
+      await dbPut('invoices', newInv);
+      await dbPut('settings', appState.settings); // the bumped invoice-number counter
+      appState.invoices.push(newInv);
+
+      // Dropbox: stamped VOID copy goes up FIRST, the original is removed
+      // only once that has succeeded. The reverse order risks deleting the
+      // sole archived copy and then failing to replace it.
+      await dropboxReplaceWithVoidCopy(oldInv, client);
+      dropboxUploadInvoice(buildInvoicePdfBlob(newInv, client), newInv, invoiceFilename(newInv, client));
+
+      renderInvoices();
+    });
 }
 
 function dismissQueueEntry(clientId, monthKey) {
@@ -5421,6 +5580,48 @@ function toggleInvoiceRow(key) {
   renderInvoices();
 }
 
+// The drift banner + its call-to-action, shared by every invoice section
+// so the wording and the ready-vs-sent rule live in exactly one place.
+// Returns '' when the invoice still matches its appointments.
+function invoiceDriftHtml(inv) {
+  const drift = invoiceDrift(inv);
+  if (!drift) return '';
+  const dir = drift.delta > 0 ? 'more' : 'less';
+  const amount = formatCurrency(Math.abs(drift.delta));
+  if (inv.status === 'ready') {
+    return `<div class="invoice-drift">
+      <div class="invoice-drift-title">Appointments changed since this was generated</div>
+      <div class="invoice-drift-body">Now totals £${formatCurrency(drift.total)} — £${amount} ${dir} than the £${formatCurrency(inv.total)} on this invoice. It hasn't been sent, so it can be updated in place.</div>
+      <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="event.stopPropagation(); amendReadyInvoice('${inv.id}')">Update to £${formatCurrency(drift.total)}</button>
+    </div>`;
+  }
+  return `<div class="invoice-drift invoice-drift-sent">
+    <div class="invoice-drift-title">⚠️ Appointments changed after this was sent</div>
+    <div class="invoice-drift-body">Now totals £${formatCurrency(drift.total)} — £${amount} ${dir} than the £${formatCurrency(inv.total)} the client was billed. This invoice has gone out, so it can't be edited: void it and issue a replacement.</div>
+    <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="event.stopPropagation(); voidAndReissueInvoice('${inv.id}')">Void &amp; Re-issue</button>
+  </div>`;
+}
+
+// "Supersedes X (£y already received)" / "Superseded by X" — keeps the
+// pair legible in the list, and specifically keeps a payment made against
+// a now-void invoice visible, since voiding a paid invoice detaches it.
+function invoiceSupersedeHtml(inv) {
+  if (inv.supersedes) {
+    const old = (appState.invoices || []).find(i => i.id === inv.supersedes);
+    if (!old) return '';
+    const paidNote = old.status === 'void' && old.wasPaidWhenVoided
+      ? ` — £${formatCurrency(old.total)} already received against it`
+      : '';
+    return `<div class="invoice-supersede">Replaces ${escapeHtml(old.invoiceNumber)}${paidNote}</div>`;
+  }
+  if (inv.supersededBy) {
+    const nw = (appState.invoices || []).find(i => i.id === inv.supersededBy);
+    if (!nw) return '';
+    return `<div class="invoice-supersede">Replaced by ${escapeHtml(nw.invoiceNumber)}</div>`;
+  }
+  return '';
+}
+
 function invoiceLineItemsHtml(lineItems, total) {
   let html = lineItems.map(li => `
     <div class="invoice-line-row">
@@ -5443,8 +5644,9 @@ function renderInvoices() {
   const overdue = allOutstanding.filter(isInvoiceOverdue).sort((a, b) => compareDateStr((a.sentDate || a.statementDate), (b.sentDate || b.statementDate)));
   const outstanding = allOutstanding.filter(i => !isInvoiceOverdue(i)).sort((a, b) => compareDateStr(b.statementDate, a.statementDate));
   const paid = appState.invoices.filter(i => i.status === 'paid').sort((a, b) => compareDateStr(b.statementDate, a.statementDate));
+  const voided = appState.invoices.filter(i => i.status === 'void').sort((a, b) => compareDateStr(b.voidedDate || b.statementDate, a.voidedDate || a.statementDate));
 
-  if (queue.length === 0 && readyInvoices.length === 0 && overdue.length === 0 && outstanding.length === 0 && paid.length === 0) {
+  if (queue.length === 0 && readyInvoices.length === 0 && overdue.length === 0 && outstanding.length === 0 && paid.length === 0 && voided.length === 0) {
     bodyEl.innerHTML = `<div class="empty-state">Nothing to invoice yet.<br>Completed appointments for invoiced clients will appear here once their month wraps up.</div>`;
     return;
   }
@@ -5477,6 +5679,8 @@ function renderInvoices() {
             </div>
             <div class="invoice-detail ${expanded ? 'open' : ''}">
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
+              ${invoiceSupersedeHtml(inv)}
+              ${invoiceDriftHtml(inv)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
@@ -5544,6 +5748,8 @@ function renderInvoices() {
             </div>
             <div class="invoice-detail ${expanded ? 'open' : ''}">
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
+              ${invoiceSupersedeHtml(inv)}
+              ${invoiceDriftHtml(inv)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
                 <button class="btn btn-primary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
@@ -5578,6 +5784,8 @@ function renderInvoices() {
             </div>
             <div class="invoice-detail ${expanded ? 'open' : ''}">
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
+              ${invoiceSupersedeHtml(inv)}
+              ${invoiceDriftHtml(inv)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
@@ -5613,6 +5821,8 @@ function renderInvoices() {
             </div>
             <div class="invoice-detail ${expanded ? 'open' : ''}">
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
+              ${invoiceSupersedeHtml(inv)}
+              ${invoiceDriftHtml(inv)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
@@ -5621,6 +5831,45 @@ function renderInvoices() {
           </div>
         </div>`;
       if (idx < paid.length - 1) html += '<div class="divider-sm"></div>';
+    });
+  }
+
+  // ── Voided (v1.4.0): superseded invoices, kept for the audit trail and
+  // deliberately last. They are never chased, never counted as unpaid,
+  // and carry no actions but Preview/Share — re-sharing a void invoice is
+  // occasionally exactly what's wanted, to show a client why a second one
+  // arrived for the same month. ──
+  if (voided.length > 0) {
+    html += `<div class="invoice-section-title">Voided</div>`;
+    voided.forEach((inv, idx) => {
+      const client = appState.clients.find(c => c.id === inv.clientId);
+      const clientSnap = client ? clientSnapshotOn(client, inv.statementDate) : null;
+      const key = 'inv:' + inv.id;
+      const expanded = _expandedInvoiceRows.has(key);
+      html += `
+        <div class="invoice-row-wrap invoice-row-void">
+          <div class="invoice-swipe-content">
+            <div class="invoice-row-header" onclick="toggleInvoiceRow('${key}')">
+              <div>
+                <div class="row-title">${escapeHtml(clientSnap ? clientSnap.name : 'Unknown client')} | ${monthLabel(inv.periodKey)}</div>
+                <div class="row-sub">${inv.invoiceNumber} · £${formatCurrency(inv.total)}${inv.wasPaidWhenVoided ? ' · was paid' : ''}</div>
+              </div>
+              <div class="invoice-row-right">
+                <span class="chip chip-void">Void</span>
+                <svg class="invoice-chevron ${expanded ? 'expanded' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </div>
+            </div>
+            <div class="invoice-detail ${expanded ? 'open' : ''}">
+              ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
+              ${invoiceSupersedeHtml(inv)}
+              <div class="invoice-actions-row">
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
+                <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      if (idx < voided.length - 1) html += '<div class="divider-sm"></div>';
     });
   }
 
@@ -5764,6 +6013,38 @@ function buildInvoicePdfBlob(invoice, client) {
     doc.text('[Bank details — add these in Settings]', margin, y);
   }
 
+  // ── Supersede cross-reference (v1.4.0) ──
+  // Printed on BOTH halves of a void/re-issue pair so the relationship is
+  // legible from the PDFs alone — the client has no access to the app, and
+  // two invoices covering the same month are otherwise just confusing.
+  const linked = invoice.supersedes
+    ? (appState.invoices || []).find(i => i.id === invoice.supersedes)
+    : (invoice.supersededBy ? (appState.invoices || []).find(i => i.id === invoice.supersededBy) : null);
+  if (linked) {
+    y += 22;
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(9);
+    doc.text(invoice.supersedes
+      ? `Replaces invoice ${linked.invoiceNumber}, which has been voided.`
+      : `Voided — replaced by invoice ${linked.invoiceNumber}.`, margin, y);
+    doc.setFont('helvetica', 'normal');
+  }
+
+  // ── VOID stamp (v1.4.0) ──
+  // Drawn LAST so it sits over the content rather than under it, and via
+  // GState opacity so the figures underneath stay readable — this is a
+  // record of what was billed, not a redaction. Verified against the
+  // embedded jsPDF 4.2.1, which supports both setGState and rotated text.
+  // The GState is reset afterwards even though nothing else draws, so this
+  // block stays safe to move.
+  if (invoice.status === 'void') {
+    doc.setGState(new doc.GState({ opacity: 0.30 }));
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(120);
+    doc.setTextColor(200, 40, 40);
+    doc.text('VOID', 297, 470, { align: 'center', angle: 32 });
+    doc.setGState(new doc.GState({ opacity: 1 }));
+    doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal');
+  }
+
   return doc.output('blob');
 }
 
@@ -5898,24 +6179,73 @@ async function dropboxEnsureFreshToken() {
 // swallowed by design — the invoice is already saved locally by the
 // time this runs, so a Dropbox hiccup must never surface as an error to
 // a non-technical user mid-invoicing.
-async function dropboxUploadInvoice(blob, invoice, filename) {
-  if (!dropboxIsConnected()) return;
-  const ok = await dropboxEnsureFreshToken();
-  if (!ok) return;
+// The archive path for an invoice. Split out (v1.4.0) so upload, the VOID
+// replacement and the delete below can never disagree about where a given
+// invoice's PDF lives — the void flow has to address a file written by an
+// earlier call, so a second copy of this path expression would be a bug
+// waiting to happen.
+function dropboxInvoicePath(invoice, filename) {
   const [, m] = invoice.periodKey.split('-');
   const safeFilename = (filename || invoice.invoiceNumber).replace(/\//g, '-');
-  const path = `/Invoices/${invoice.financialYear.replace('/', '-')}/${m} - ${MONTH_NAMES[parseInt(m, 10) - 1]}/${safeFilename}.pdf`;
+  return `/Invoices/${invoice.financialYear.replace('/', '-')}/${m} - ${MONTH_NAMES[parseInt(m, 10) - 1]}/${safeFilename}.pdf`;
+}
+
+async function dropboxUploadInvoice(blob, invoice, filename) {
+  if (!dropboxIsConnected()) return false;
+  const ok = await dropboxEnsureFreshToken();
+  if (!ok) return false;
   try {
-    await fetch('https://content.dropboxapi.com/2/files/upload', {
+    const res = await fetch('https://content.dropboxapi.com/2/files/upload', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + appState.settings.dropbox.accessToken,
-        'Dropbox-API-Arg': JSON.stringify({ path, mode: 'overwrite', autorename: false, mute: true }),
+        'Dropbox-API-Arg': JSON.stringify({ path: dropboxInvoicePath(invoice, filename), mode: 'overwrite', autorename: false, mute: true }),
         'Content-Type': 'application/octet-stream',
       },
       body: blob,
     });
-  } catch (e) { /* silent — best-effort, local Files copy already exists */ }
+    return res.ok;
+  } catch (e) { return false; } // silent — best-effort, local Files copy already exists
+}
+
+async function dropboxDeletePath(path) {
+  if (!dropboxIsConnected()) return false;
+  const ok = await dropboxEnsureFreshToken();
+  if (!ok) return false;
+  try {
+    const res = await fetch('https://api.dropboxapi.com/2/files/delete_v2', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + appState.settings.dropbox.accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ path }),
+    });
+    return res.ok;
+  } catch (e) { return false; }
+}
+
+// Replaces an invoice's archived PDF with a VOID-stamped copy under a
+// "- VOID" filename (v1.4.0). Both halves matter: the stamp makes it
+// obvious on opening, the filename makes it obvious in a folder listing
+// without opening anything.
+//
+// ORDER IS LOAD-BEARING. The stamped copy is uploaded first and the
+// original removed only if that upload actually succeeded. Deleting
+// first would risk destroying the only archived copy and then failing to
+// write its replacement — offline, expired token, Dropbox down. Leaving
+// both files behind is untidy; leaving none is data loss.
+//
+// buildInvoicePdfBlob reads status === 'void' to draw the stamp, so this
+// must be called AFTER the record has been marked void.
+async function dropboxReplaceWithVoidCopy(invoice, client) {
+  if (!dropboxIsConnected()) return;
+  const originalPath = dropboxInvoicePath(invoice, invoiceFilename(invoice, client));
+  const voidFilename = invoiceFilename(invoice, client) + ' - VOID';
+  const uploaded = await dropboxUploadInvoice(buildInvoicePdfBlob(invoice, client), invoice, voidFilename);
+  if (!uploaded) return; // keep the original — better a stale archive than none
+  const voidPath = dropboxInvoicePath(invoice, voidFilename);
+  if (voidPath !== originalPath) await dropboxDeletePath(originalPath);
 }
 
 // ════════════════════════════════════════════════
@@ -7652,6 +7982,35 @@ async function handleRestoreSnapshot(date) {
   }
 }
 
+// A per-financial-year invoice counter above zero with NO invoice record
+// for that year is self-evidently inconsistent — nothing but a generation
+// increments it, and nothing deletes invoices (voiding keeps the record).
+// The live data carried exactly that: counters {'2026/27': 1} with an
+// empty invoices store, so the next invoice would have been numbered -002
+// with no -001 anywhere. Resolved with Adam on 2026-09-24: treat the
+// orphaned bump as a false start and reset, so numbering begins at 001.
+//
+// Deliberately conservative — it only ever lowers a counter to the
+// highest number actually present for that year, so a year with real
+// invoices is never touched, and it cannot renumber anything that exists.
+async function reconcileInvoiceCounters() {
+  const counters = appState.settings.invoiceCounters || {};
+  let changed = false;
+  Object.keys(counters).forEach(fy => {
+    const highest = (appState.invoices || [])
+      .filter(inv => inv.financialYear === fy)
+      .reduce((max, inv) => {
+        const m = /-(\d{3})$/.exec(inv.invoiceNumber || '');
+        return m ? Math.max(max, parseInt(m[1], 10)) : max;
+      }, 0);
+    if ((counters[fy] || 0) > highest) { counters[fy] = highest; changed = true; }
+  });
+  if (changed) {
+    appState.settings.invoiceCounters = counters;
+    await dbPut('settings', appState.settings);
+  }
+}
+
 // ── Boot ──────────────────────────────────────────────────────────
 // Everything that used to run unconditionally at parse time now waits for
 // a confirmed session first — substance unchanged, just relocated behind
@@ -7660,6 +8019,7 @@ async function handleRestoreSnapshot(date) {
 // onAuthStateChange event (e.g. a token refresh) running it twice.
 function runBoot() {
   return Promise.all([loadClients(), ensureAppSettings(), loadAppointments(), loadInvoices(), loadReceipts()]).then(async () => {
+    await reconcileInvoiceCounters();
     await dropboxHandleRedirect(); // no-op unless the page was just reloaded via a Dropbox OAuth redirect
     if (document.getElementById('screen-clients').classList.contains('active')) renderClients();
     if (document.getElementById('screen-home').classList.contains('active')) renderHome();
