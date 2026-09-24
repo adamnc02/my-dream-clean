@@ -12,7 +12,7 @@ install.
 
 ## Status
 
-**Version 1.2.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
+**Version 1.3.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
 every delivery.
 
 All eight planned build stages are complete, plus the additions made since:
@@ -29,6 +29,7 @@ All eight planned build stages are complete, plus the additions made since:
 | — | Guided tours, one per page | ✅ Done |
 | — | Sign-in and cloud snapshot backup (Supabase) | ✅ Done |
 | — | Cross-day diary drag, salary log, message templates | ✅ Done |
+| — | Historic appointment corrections + reinstating a cancelled occurrence | ✅ Done |
 
 **Not yet done — Stage 9 (integration pass):** a full pass on a real iPhone in standalone
 (home-screen) PWA mode. iOS Safari's PWA mode has known quirks — `visualViewport` handling,
@@ -130,8 +131,18 @@ icon sizes, so this is a deliberately bolder mark rather than a shrunk copy.
 - **Mileage is always one out-and-back trip per working day** — home → appointment 1 → appointment
   2 → … → home, in the order set in Diary. It is never re-optimised for the shortest route, since
   that is not necessarily the route you will drive.
-- **The past is immutable.** A past day cannot be dragged into, and a holiday day never renders a
-  slot to drop into.
+- **The past is fixed for planning, correctable for accuracy** (changed in v1.3.0). A past day
+  still cannot be dragged into or out of, reordered, or have an appointment added to it, and a
+  holiday day never renders a slot to drop into — rescheduling something that has already happened
+  is meaningless. But a past appointment *can* be tapped in Diary to correct what actually
+  happened ("that Tuesday was 4 hours, not 3"), because getting the record right is what the
+  invoices and Summary figures depend on. Such a correction is always scoped to that single date
+  and never touches the recurring slot. If an invoice has already been generated for that month,
+  the modal says so before you commit — see Known limitations.
+- **A cancelled past occurrence can be put back.** It shows on the Diary as a dashed, struck-through
+  "Cancelled · tap to reinstate" chip. Tapping it reopens the appointment so you can set the hours
+  actually worked. Previously cancelling was a one-way door, because a cancelled occurrence drew
+  nothing you could tap.
 - **One shared rule decides whether an appointment is billable on a given date**, resolved against
   that date rather than today's values, and used identically by mileage, Summary and Invoices — so
   the three can never quietly drift apart.
@@ -163,6 +174,11 @@ icon sizes, so this is a deliberately bolder mark rather than a shrunk copy.
 - **Postcode lookup** (postcodes.io) and **mileage routing** (OpenRouteService) both need a
   connection. Both fail gracefully: manual address entry still works, and mileage reads as
   unavailable.
+- **A generated invoice is never recalculated, and cannot be deleted or amended in the app.** Its
+  line items are a snapshot taken when it was generated. So correcting a past appointment in a
+  month you have already invoiced will not update that invoice — the modal warns you before the
+  change, but putting it right (a corrected invoice, or an adjustment on the next one) is a manual
+  job outside the app for now.
 - **The JSON backup import is a full replace, not a merge.** It wipes what is on the device and
   replaces it with the backup's contents. There is a confirmation step, and no undo afterwards. The
   same is true of Restore from Cloud.
