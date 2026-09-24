@@ -208,12 +208,33 @@ cover this date" is a direct `periodKey` match rather than a date-range walk. `i
 resolves the client snapshot **on the appointment's date**, not today, so a client since moved to
 cash still warns about a month they were invoiced for.
 
+**Reinstating a cancelled occurrence.** Cancelling used to be a one-way door: a cancelled
+occurrence is filtered out by `getOccurrencesForDate`, so it renders no chip to tap, and a past day
+deliberately offers no "+" to re-add it with. `cancelledOccurrencesForDate(dateStr)` is the exact
+inverse of the template branch of `getOccurrencesForDate` — the versions that *would* resolve on
+that date were it not in their `cancelledDates` — and the Diary's past columns render each as a
+dashed, struck-through **ghost chip** that opens the modal in reinstate mode (title "Reinstate
+Appointment", primary button "Reinstate this occurrence", the now-meaningless "Cancel this
+occurrence only" hidden). Saving drops the cancellation and then runs the same
+`applyHistoricOccurrenceCorrection`, so a reinstate at a *different* duration from the template
+lands as the cancel + ad-hoc pair exactly as any other correction does.
+
+One subtlety worth keeping: that ad-hoc branch **re-adds** the cancellation, which is the correct
+end state — the template stays cancelled and the ad-hoc record carries what actually happened — but
+it means a naive inverse would render a ghost chip beside the very appointment that replaced it,
+reading as a double booking. `cancelledOccurrencesForDate` therefore filters out any cancellation
+whose client already has an ad-hoc record on that same date. A cancellation with no same-day
+replacement is a real gap and still gets its ghost, including the origin day of a cross-day move.
+
 **What stays locked.** Adding to a past day, dragging, reordering, cross-day moves, and deleting a
 recurring slot from a past date (which would truncate history that may already be invoiced — the
 Delete button is hidden entirely on a historic template edit). Cancelling a single past occurrence
 *is* allowed — "this visit didn't happen" is a legitimate correction — with confirm wording that
-spells out the Summary and invoice consequences. Home is unaffected: it is view-only on every date
-by design (§9), not because of any past-date rule.
+spells out the Summary and invoice consequences, and is now reversible via the ghost chip above.
+Home is unaffected: it is view-only on every date by design (§9), not because of any past-date
+rule. Ghost chips are **past-only**: a cancelled *future* occurrence has the same invisibility
+problem, but reinstating one belongs with the forward-editing flow and its effective-date semantics,
+not here.
 
 ---
 

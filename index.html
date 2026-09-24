@@ -651,6 +651,16 @@ h3 {
    `readonly` still describes their drag state, so the muted look above is
    kept and only the cursor changes, signalling "opens, doesn't drag". */
 .diary-chip.readonly.historic-editable { cursor: pointer; }
+/* Ghost chip for a cancelled past occurrence — visibly not a real booking
+   (dashed, no fill, struck-through name) but tappable to reinstate. */
+.diary-chip.cancelled {
+  background: none;
+  border: 1px dashed var(--border2);
+  border-left: 3px dashed var(--border2);
+  opacity: 0.85;
+}
+.diary-chip.cancelled .diary-chip-name { text-decoration: line-through; color: var(--text3); font-weight: 500; }
+.diary-chip.cancelled .diary-chip-dur { font-size: 9px; }
 .diary-chip.dragging { opacity: 0.35; }
 /* Week A/B colour coding (spec: Week A = blue, Week B = green) — applied
    via a class on the day column (set once per rendered week) so every
@@ -1941,7 +1951,7 @@ h3 {
       <div class="form-hint">Past occurrences of this recurring slot are never changed.</div>
     </div>
 
-    <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="saveAppointment()">Save</button>
+    <button class="btn btn-primary" id="appt-save-btn" style="width:100%; margin-top:8px;" onclick="saveAppointment()">Save</button>
 
     <div id="appt-existing-actions" style="display:none;">
       <div class="divider-sm"></div>
@@ -3940,6 +3950,34 @@ function getOccurrencesForDate(dateStr) {
   return occ.sort((a, b) => effectiveSlotOrder(a, dateStr) - effectiveSlotOrder(b, dateStr));
 }
 
+// The exact inverse of the template branch of getOccurrencesForDate: the
+// template versions that WOULD resolve on this date were it not listed in
+// their cancelledDates. Used only by the Diary's past columns, to render a
+// cancelled occurrence as a ghost chip so it can be reinstated (v1.3.0) —
+// otherwise cancelling a past occurrence is a one-way door, since nothing
+// renders for it and a past day has no "+" to re-add it with.
+function cancelledOccurrencesForDate(dateStr) {
+  if (isWeekend(dateStr)) return []; // weekends only ever hold adhoc records, which are deleted rather than cancelled
+  const dow = getDayOfWeekKey(dateStr);
+  const letter = getWeekLetter(dateStr);
+  // A cancellation that exists only to make room for a replacement ad-hoc
+  // record on the SAME date is not an absence — it is how a one-off
+  // correction is stored (applyHistoricOccurrenceCorrection). Showing a
+  // "cancelled" ghost next to the very appointment that replaced it would
+  // read as a double booking, so those are filtered out. A cancellation with
+  // no same-day replacement is a real gap and still gets its ghost, including
+  // the origin day of a cross-day move.
+  const replacedClientIds = new Set(
+    appState.appointments.filter(a => a.type === 'adhoc' && a.date === dateStr).map(a => a.clientId)
+  );
+  return appState.appointments.filter(a =>
+    a.type === 'template' && a.template === letter && a.dayOfWeek === dow &&
+    a.effectiveFrom <= dateStr && (a.effectiveTo === null || a.effectiveTo >= dateStr) &&
+    (a.cancelledDates || []).includes(dateStr) &&
+    !replacedClientIds.has(a.clientId)
+  ).sort((a, b) => effectiveSlotOrder(a, dateStr) - effectiveSlotOrder(b, dateStr));
+}
+
 // A "just this occurrence" reorder (see reorderOccurrencesOnDate) stores
 // its result in orderOverrides keyed by date, rather than changing the
 // template's own slotOrder — so it only ever affects how that one date
@@ -4583,10 +4621,28 @@ function renderDiaryWeek() {
           <div class="diary-chip-dur">${formatHoursShort(appt.durationHours)}</div>
         </div>`;
       });
+      // Cancelled past occurrences render as tappable "ghost" chips (v1.3.0).
+      // Without these a cancelled occurrence is invisible and therefore
+      // unrecoverable: getOccurrencesForDate filters it out, and a past day
+      // offers no "+" to re-add it. Past only — a cancelled FUTURE occurrence
+      // has the same problem but belongs with the forward-editing flow, not
+      // the historic-correction one.
+      if (isPast) {
+        cancelledOccurrencesForDate(dateStr).forEach(appt => {
+          const client = appState.clients.find(c => c.id === appt.clientId);
+          const clientSnap = client ? clientSnapshotOn(client, dateStr) : null;
+          const name = clientSnap ? clientSnap.name : 'Unknown';
+          html += `<div class="diary-chip readonly historic-editable cancelled"
+              onclick="openAppointmentModal('${appt.id}','${dateStr}',renderDiaryWeek)">
+            <div class="diary-chip-name">${escapeHtml(name)}</div>
+            <div class="diary-chip-dur">Cancelled · tap to reinstate</div>
+          </div>`;
+        });
+      }
       for (let e = 0; e < emptyCount; e++) {
         html += `<div class="diary-chip-empty" onclick="openAppointmentModal(null,'${dateStr}',renderDiaryWeek)">+</div>`;
       }
-      if (occ.length === 0 && emptyCount === 0 && isPast) {
+      if (occ.length === 0 && emptyCount === 0 && isPast && cancelledOccurrencesForDate(dateStr).length === 0) {
         html += `<div class="diary-day-holiday">—</div>`;
       }
     }
@@ -4693,14 +4749,21 @@ function openAppointmentModal(id, dateStr, refreshFn) {
   const deleteLabel = document.getElementById('appt-delete-label');
   const notice = document.getElementById('appt-historic-notice');
   const deleteWrap = document.getElementById('appt-delete-wrap');
+  const saveBtn = document.getElementById('appt-save-btn');
 
   const isHistoric = !!id && isPastDate(dateStr);
   notice.style.display = 'none';
   deleteWrap.style.display = 'block';
+  saveBtn.textContent = 'Save';
 
   if (id) {
     const appt = appState.appointments.find(a => a.id === id);
-    document.getElementById('appt-modal-title').textContent = isHistoric ? 'Correct Past Appointment' : 'Edit Appointment';
+    // A cancelled past occurrence is reached only via its ghost chip, and the
+    // modal becomes a reinstate flow rather than a correction one.
+    const isCancelled = isHistoric && appt.type === 'template'
+      && (appt.cancelledDates || []).includes(dateStr);
+    document.getElementById('appt-modal-title').textContent =
+      isCancelled ? 'Reinstate Appointment' : (isHistoric ? 'Correct Past Appointment' : 'Edit Appointment');
     selectEl.value = appt.clientId;
     document.getElementById('appt-duration-input').value = appt.durationHours;
     existingActions.style.display = 'block';
@@ -4716,12 +4779,18 @@ function openAppointmentModal(id, dateStr, refreshFn) {
       // that already happened (and may already be invoiced). Cancelling the
       // single occurrence is still offered; ending the series is not.
       if (isHistoric) deleteWrap.style.display = 'none';
+      // Already cancelled — offering "cancel this occurrence" again is
+      // meaningless, and the primary action is now to put it back.
+      if (isCancelled) {
+        cancelBtn.style.display = 'none';
+        saveBtn.textContent = 'Reinstate this occurrence';
+      }
     } else {
       effGroup.style.display = 'none';
       cancelBtn.style.display = 'none';
       deleteLabel.textContent = ' appointment';
     }
-    if (isHistoric) showHistoricNotice(appt, dateStr);
+    if (isHistoric) showHistoricNotice(appt, dateStr, isCancelled);
   } else {
     document.getElementById('appt-modal-title').textContent = 'Add Appointment';
     if (clients[0]) selectEl.value = clients[0].id;
@@ -4735,7 +4804,7 @@ function openAppointmentModal(id, dateStr, refreshFn) {
 // Fills the modal's historic notice. Three cases, most severe first — the
 // wording deliberately promises no automatic invoice fix, because there
 // isn't one: the app has no way to delete or amend a generated invoice.
-function showHistoricNotice(appt, dateStr) {
+function showHistoricNotice(appt, dateStr, isCancelled) {
   const notice = document.getElementById('appt-historic-notice');
   const titleEl = document.getElementById('appt-historic-notice-title');
   const bodyEl = document.getElementById('appt-historic-notice-body');
@@ -4746,6 +4815,26 @@ function showHistoricNotice(appt, dateStr) {
   const onceNote = appt.type === 'template'
     ? ' This changes only this one date — the recurring slot is untouched.'
     : '';
+
+  if (isCancelled) {
+    // Reinstating is an addition to a past period, so it can only ever
+    // increase an invoice — worth saying which way the error runs.
+    const notice2 = document.getElementById('appt-historic-notice');
+    notice2.className = invoice ? 'historic-notice invoiced' : 'historic-notice';
+    titleEl.textContent = invoice
+      ? `⚠️ Reinstating — already invoiced (${invoice.invoiceNumber})`
+      : 'Reinstating a cancelled occurrence';
+    bodyEl.textContent = invoice
+      ? `${dayLabel} was cancelled and is being put back, but invoice ${invoice.invoiceNumber} `
+        + `(${monthLabel(invoice.periodKey)}, £${formatCurrency(invoice.total)}) has already been `
+        + `generated without it and will NOT update — it is under-billed by this visit until you `
+        + `correct it separately. Set the duration below to what was actually worked.`
+      : `${dayLabel} was cancelled and is being put back. Set the duration below to what was `
+        + `actually worked — it will be included in your Summary figures and in that month's `
+        + `invoice when you generate it.`;
+    notice2.style.display = 'block';
+    return;
+  }
 
   if (invoice) {
     notice.className = 'historic-notice invoiced';
@@ -4879,6 +4968,15 @@ function saveAppointment() {
 // its position in that day's running order.
 function applyHistoricOccurrenceCorrection(appt, dateStr, clientId, duration, refresh) {
   const ids = [];
+  // Reinstating: drop the cancellation first, so the date is a live
+  // occurrence again before the correction below decides how to record it.
+  // (If the corrected duration differs from the template's, the ad-hoc
+  // branch re-adds the cancellation — that is the correct end state, not a
+  // contradiction: the template stays cancelled here and the ad-hoc record
+  // carries what actually happened.)
+  if ((appt.cancelledDates || []).includes(dateStr)) {
+    appt.cancelledDates = appt.cancelledDates.filter(d => d !== dateStr);
+  }
   if (templateResolvesToSingleDate(appt, dateStr)) {
     appt.clientId = clientId;
     appt.durationHours = duration;

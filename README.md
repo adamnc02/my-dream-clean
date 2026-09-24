@@ -29,7 +29,7 @@ All eight planned build stages are complete, plus the additions made since:
 | — | Guided tours, one per page | ✅ Done |
 | — | Sign-in and cloud snapshot backup (Supabase) | ✅ Done |
 | — | Cross-day diary drag, salary log, message templates | ✅ Done |
-| — | Historic appointment corrections, with invoiced-client warning | ✅ Done |
+| — | Historic appointment corrections + reinstating a cancelled occurrence | ✅ Done |
 
 **Not yet done — Stage 9 (integration pass):** a full pass on a real iPhone in standalone
 (home-screen) PWA mode. iOS Safari's PWA mode has known quirks — `visualViewport` handling,
@@ -139,6 +139,10 @@ icon sizes, so this is a deliberately bolder mark rather than a shrunk copy.
   invoices and Summary figures depend on. Such a correction is always scoped to that single date
   and never touches the recurring slot. If an invoice has already been generated for that month,
   the modal says so before you commit — see Known limitations.
+- **A cancelled past occurrence can be put back.** It shows on the Diary as a dashed, struck-through
+  "Cancelled · tap to reinstate" chip. Tapping it reopens the appointment so you can set the hours
+  actually worked. Previously cancelling was a one-way door, because a cancelled occurrence drew
+  nothing you could tap.
 - **One shared rule decides whether an appointment is billable on a given date**, resolved against
   that date rather than today's values, and used identically by mileage, Summary and Invoices — so
   the three can never quietly drift apart.
