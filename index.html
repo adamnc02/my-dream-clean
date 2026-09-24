@@ -4247,7 +4247,7 @@ function applyOrderForOccurrence(appt, dateStr, newOrder, scope, touchedIds) {
 // this single occurrence's position changes, never past OR future ones.
 function reorderOccurrencesOnDate(dateStr, fromIdx, toIdx, refreshFn, scope) {
   if (fromIdx === toIdx) return;
-  if (isPastDate(dateStr)) return; // past is immutable
+  if (isPastDate(dateStr)) return; // past stays unreschedulable — v1.3.0 allows correcting a past occurrence's details, never reordering the day it sat in
 
   const occ = getOccurrencesForDate(dateStr);
   if (fromIdx < 0 || fromIdx >= occ.length || toIdx < 0 || toIdx >= occ.length) return;
