@@ -233,9 +233,23 @@ Delete button is hidden entirely on a historic template edit). Cancelling a sing
 *is* allowed — "this visit didn't happen" is a legitimate correction — with confirm wording that
 spells out the Summary and invoice consequences, and is now reversible via the ghost chip above.
 Home is unaffected: it is view-only on every date by design (§9), not because of any past-date
-rule. Ghost chips are **past-only**: a cancelled *future* occurrence has the same invisibility
-problem, but reinstating one belongs with the forward-editing flow and its effective-date semantics,
-not here.
+rule.
+
+**Ghost chips are past-only, and that is settled, not pending.** A cancelled occurrence on today or
+a future date renders nothing, so there is a window — from the moment it is cancelled until that
+date has passed — where it cannot be tapped to undo. The `+` button still exists on those days, so
+re-adding the client as a one-off is the route back, producing data equivalent to what reinstating
+would have written anyway.
+
+Reviewed with Adam on 2026-09-24 and **kept deliberately**: a forward-dated cancellation is a
+planning decision that has already been made, and showing struck-through ghosts across future weeks
+would clutter the view you plan in. A past one is different — it is a record of what did not
+happen, and that is what the invoices and Summary figures are built from.
+
+Do not "fix" this by widening the `isPast` gate. If it is ever revisited, note that the modal
+decides it is in reinstate mode from `isPastDate`, not from whether the occurrence is cancelled —
+so rendering a future ghost without changing `openAppointmentModal` alongside it would open the
+ordinary edit modal and silently fail to un-cancel anything.
 
 ---
 

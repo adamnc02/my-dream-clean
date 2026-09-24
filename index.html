@@ -4652,9 +4652,15 @@ function renderDiaryWeek() {
       // Cancelled past occurrences render as tappable "ghost" chips (v1.3.0).
       // Without these a cancelled occurrence is invisible and therefore
       // unrecoverable: getOccurrencesForDate filters it out, and a past day
-      // offers no "+" to re-add it. Past only — a cancelled FUTURE occurrence
-      // has the same problem but belongs with the forward-editing flow, not
-      // the historic-correction one.
+      // offers no "+" to re-add it.
+      //
+      // PAST ONLY, deliberately (reviewed with Adam 2026-09-24, see
+      // TECHNICAL.md 5.1). A forward-dated cancellation is a planning
+      // decision already taken, and ghosts strewn across future weeks would
+      // clutter the view you plan in; those days still have a "+" to re-add
+      // a client as a one-off. Widening this gate also means changing
+      // openAppointmentModal, which infers reinstate mode from isPastDate
+      // rather than from the occurrence being cancelled.
       if (isPast) {
         cancelledOccurrencesForDate(dateStr).forEach(appt => {
           const client = appState.clients.find(c => c.id === appt.clientId);
