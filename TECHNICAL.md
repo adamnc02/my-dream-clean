@@ -21,6 +21,7 @@ built and why. **Update this alongside README.md whenever a change touches how s
 10. [Module: Clients](#10-module-clients)
 11. [Addresses and postcode lookup](#11-addresses-and-postcode-lookup)
 12. [Module: Invoices](#12-module-invoices)
+    - [12.1 Drift, amend and void/re-issue (v1.4.0)](#121-drift-amend-and-voidre-issue-v140)
 13. [PDF generation and file handling](#13-pdf-generation-and-file-handling)
 14. [Dropbox archival](#14-dropbox-archival)
 15. [Module: Summary](#15-module-summary)
@@ -232,9 +233,23 @@ Delete button is hidden entirely on a historic template edit). Cancelling a sing
 *is* allowed — "this visit didn't happen" is a legitimate correction — with confirm wording that
 spells out the Summary and invoice consequences, and is now reversible via the ghost chip above.
 Home is unaffected: it is view-only on every date by design (§9), not because of any past-date
-rule. Ghost chips are **past-only**: a cancelled *future* occurrence has the same invisibility
-problem, but reinstating one belongs with the forward-editing flow and its effective-date semantics,
-not here.
+rule.
+
+**Ghost chips are past-only, and that is settled, not pending.** A cancelled occurrence on today or
+a future date renders nothing, so there is a window — from the moment it is cancelled until that
+date has passed — where it cannot be tapped to undo. The `+` button still exists on those days, so
+re-adding the client as a one-off is the route back, producing data equivalent to what reinstating
+would have written anyway.
+
+Reviewed with Adam on 2026-09-24 and **kept deliberately**: a forward-dated cancellation is a
+planning decision that has already been made, and showing struck-through ghosts across future weeks
+would clutter the view you plan in. A past one is different — it is a record of what did not
+happen, and that is what the invoices and Summary figures are built from.
+
+Do not "fix" this by widening the `isPast` gate. If it is ever revisited, note that the modal
+decides it is in reinstate mode from `isPastDate`, not from whether the occurrence is cancelled —
+so rendering a future ghost without changing `openAppointmentModal` alongside it would open the
+ordinary edit modal and silently fail to un-cancel anything.
 
 ---
 
@@ -424,7 +439,19 @@ A client/month pair enters the queue when all of these hold:
   every downstream use is automatically safe rather than needing its own escaping.
 - `invoiceFilename(invoice, client)` is deliberately different from the invoice *number*: it always
   uses the **full** client name plus the invoiced month, so a flat folder of PDFs is identifiable
-  without opening each one.
+  without opening each one. It ends with `invoiceReference(invoice)` — the bare `<FY>-<NNN>` tail —
+  **not** the whole invoice number, because the number leads with a client label and the filename
+  already starts with the client's name. Pasting the number on whole repeated it:
+
+  ```
+  before:  Howdens Altrincham - September 2026 - Howdens Altrincham - 2026-27-001.pdf
+  after:   Howdens Altrincham - September 2026 - 2026-27-001.pdf
+  ```
+
+  `invoiceReference` derives the tail with an end-anchored match rather than storing it, so it works
+  for records written before it existed, and falls back to the whole number if the shape is not
+  recognised — a filename is never worth throwing for. Fixed in v1.4.0; note that it **changes the
+  Dropbox path**, so any PDF archived under the old shape is not overwritten by a later re-upload.
 
 ### Lifecycle
 
@@ -435,6 +462,54 @@ A client/month pair enters the queue when all of these hold:
 (`invoiceLineItemsHtml`); `wireInvoiceSwipeGestures` attaches swipe-to-dismiss **to Ready-to-Send
 rows only**.
 
+Statuses are `ready` → `outstanding` → `paid`, plus `void` (§12.1). Overdue is **derived**, not
+stored.
+
+### 12.1 Drift, amend and void/re-issue (v1.4.0)
+
+An invoice's `lineItems` are a snapshot taken at generation and never recalculated. `getRevenueForRange`
+(§15), by contrast, recomputes from appointments on every render. The two are independent **by
+design**, but that means correcting a historic appointment in an invoiced month silently desynced
+the books from the billed figure, with no route back — `getInvoiceQueue` refuses to re-offer a
+period that already has an invoice. v1.3.0 (§5.1) made such corrections easy, so v1.4.0 closes the
+loop.
+
+**One source of figures.** `computeInvoiceFigures(clientId, monthKey)` is now the only place an
+invoice's lines and total are derived, used by generation *and* by drift detection. Two copies of
+that arithmetic would make a spurious difference indistinguishable from a real one — which is the
+entire signal here.
+
+**Drift is derived, never stored.** `invoiceDrift(invoice)` recomputes the period and compares.
+No flag to set at correction time, no migration for existing records, and it catches every cause of
+divergence — a backdated rate on the client card, a holiday added, a cancelled occurrence
+reinstated — not just the ones we remembered to instrument. It returns `null` for a `void` invoice,
+which is history and not supposed to track anything.
+
+**The fix depends on whether the client has seen it:**
+
+| Status | Path | Why |
+|---|---|---|
+| `ready` | `amendReadyInvoice` — mutate in place, keep the number, re-upload over the same Dropbox path | Never left the device; there is no prior version worth preserving. |
+| `outstanding` / `overdue` / `paid` | `voidAndReissueInvoice` | The client holds a document bearing that number and total. Editing it silently would make the app lie about what was billed. |
+
+`voidAndReissueInvoice` sets `status:'void'`, `voidedDate`, `supersededBy`, and captures
+`wasPaidWhenVoided` / `statusBeforeVoid` — once `status` is `'void'` there is otherwise no way to
+tell a voided *paid* invoice from a voided unpaid one, and that is exactly what says whether money
+has already come in. The replacement carries `supersedes` back. Both links are stored, so the trail
+survives a backup round-trip.
+
+**Voided invoices deliberately do not reserve their period.** `getInvoiceQueue`'s `existingPeriods`
+filters them out — that is what allows a voided month to be invoiced again. In the normal flow the
+replacement is created in the same operation and immediately holds the period, so the month never
+actually reappears in the queue; the exclusion matters for the case where it would otherwise be
+stranded forever. `getUnpaidInvoicesTotal` needs no change: it whitelists `ready`/`outstanding`, so
+`void` drops out on its own.
+
+**Decided with Adam, 2026-09-24:** voiding a **paid** invoice is allowed and treated exactly like
+any other sent invoice. The consequence is that the payment detaches, since the replacement is
+issued unpaid; `invoiceSupersedeHtml` surfaces "£x already received against it" on the new row so
+the outstanding amount stays visible. Reconciling it is manual.
+
 ---
 
 ## 13. PDF generation and file handling
@@ -442,6 +517,24 @@ rows only**.
 `buildInvoicePdfBlob(invoice, client)` draws the document with **jsPDF, bundled inline**: logo,
 business details and address as they were on the statement date, client name and billing address,
 the line items, the total, and the bank payment instructions.
+
+The line-item table is **Date / Qty (hrs) / Total** — the per-hour **Price column was dropped at
+Ella's request on 2026-09-24**. `rate` is still stored on every line item and must stay: it is what
+`computeInvoiceFigures` recomputes against, which is the basis of drift detection (§12.1). Dropping
+it from the record would break void/re-issue. This is presentation only. The in-app expanded invoice
+row (`invoiceLineItemsHtml`) still shows `£x/hr`, deliberately — that view is for Ella, not the
+client.
+
+**The PDF is never stored** — only the record is, and the PDF is rebuilt from it on demand for
+Preview, Share and every Dropbox upload. That is what makes voiding cheap: setting `status:'void'`
+makes every copy the app produces from then on come out stamped, with no stored file to chase.
+
+**VOID stamp (v1.4.0)** — drawn *last* so it sits over the content rather than under it, via
+`setGState({opacity})` so the figures underneath stay readable; this is a record of what was
+billed, not a redaction. Verified against the embedded **jsPDF 4.2.1**, which supports both
+`setGState` and rotated text (`{ angle }`). A **supersede cross-reference** ("Replaces invoice X" /
+"Voided — replaced by invoice Y") is printed on both halves of a pair, because the client has no
+access to the app and two invoices for the same month are otherwise just confusing.
 
 `saveOrShareFile(blob, filename, opts)` is the one file exit. It prefers the Web Share API when the
 platform supports sharing files (which is what puts a PDF into iOS Files or Mail), and falls back
@@ -459,8 +552,26 @@ exactly this app.
 - `dropboxHandleRedirect()` runs on boot and is a **no-op unless the page was just reloaded via the
   OAuth redirect**;
 - `dropboxEnsureFreshToken()` refreshes before an upload;
-- `dropboxUploadInvoice(blob, invoice, filename)` writes to
-  `/Invoices/<financial year>/<month>/<filename>.pdf`.
+- `dropboxInvoicePath(invoice, filename)` builds
+  `/Invoices/<financial year>/<month>/<filename>.pdf` — split out in v1.4.0 so upload, the VOID
+  replacement and the delete can never disagree about where a given invoice's PDF lives;
+- `dropboxUploadInvoice(blob, invoice, filename)` writes there, returning whether it succeeded;
+- `dropboxDeletePath(path)` removes a file (`files/delete_v2`);
+- `dropboxReplaceWithVoidCopy(invoice, client)` swaps an archived PDF for a VOID-stamped one under
+  a `… - VOID` filename.
+
+Both halves of that last one matter: the stamp makes it obvious on opening, the filename makes it
+obvious in a folder listing without opening anything.
+
+> **Order is load-bearing.** The stamped copy is uploaded **first**, and the original deleted only
+> if that upload actually succeeded. Deleting first risks destroying the only archived copy and
+> then failing to write its replacement — offline, expired token, Dropbox down. Leaving both files
+> behind is untidy; leaving none is data loss. It must also be called *after* the record is marked
+> void, since `buildInvoicePdfBlob` reads `status` to decide whether to draw the stamp.
+
+`delete_v2` and `upload` are both covered by the **`files.content.write`** scope the app already
+holds, so voiding needs no re-consent. Note the authorize URL requests no explicit `scope`
+parameter — granted scopes come from the app's Permissions tab in the Dropbox console.
 
 `dropboxIsConnected()` gates the UI. **Every failure here is non-fatal** — the invoice is already
 saved locally, and archival is a backup.
@@ -685,7 +796,7 @@ Promise.all([ loadClients, ensureAppSettings, loadAppointments, loadInvoices, lo
 
 ## 23. Versioning
 
-No version was tracked before **v1.1.0**. Current: **v1.3.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
+No version was tracked before **v1.1.0**. Current: **v1.4.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
 the top of `index.html` and the **Version** line under README's `## Status` **together, on every
 delivery**.
 

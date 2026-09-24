@@ -12,7 +12,7 @@ install.
 
 ## Status
 
-**Version 1.3.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
+**Version 1.4.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
 every delivery.
 
 All eight planned build stages are complete, plus the additions made since:
@@ -30,6 +30,7 @@ All eight planned build stages are complete, plus the additions made since:
 | — | Sign-in and cloud snapshot backup (Supabase) | ✅ Done |
 | — | Cross-day diary drag, salary log, message templates | ✅ Done |
 | — | Historic appointment corrections + reinstating a cancelled occurrence | ✅ Done |
+| — | Invoice drift detection, amend-while-ready, void &amp; re-issue once sent | ✅ Done |
 
 **Not yet done — Stage 9 (integration pass):** a full pass on a real iPhone in standalone
 (home-screen) PWA mode. iOS Safari's PWA mode has known quirks — `visualViewport` handling,
@@ -97,7 +98,8 @@ Six tabs.
   manual data entry: a client/month pairing appears once that month has no further appointments to
   come. Generate a PDF with your logo, business details and bank payment instructions; numbering is
   sequential per financial year; then a pre-filled email send flow and Outstanding → Paid tracking.
-  A queue entry can be swiped away if it should not be invoiced.
+  A queue entry can be swiped away if it should not be invoiced. The app also **watches for
+  invoices that no longer match their appointments** — see below.
 - **Summary** — Day / Week / Month / **UC period** / Year reporting: revenue, costs from receipts,
   mileage with the tiered UK allowance (45p per mile up to 10,000 miles in a financial year, 25p
   after), salary drawn, unpaid invoices, the value of invoices not yet generated, and an estimated
@@ -114,6 +116,33 @@ tooltip, no central help hub.
 **App icon** — a simplified version of the My Dream Clean logo (roofline, window grid, sparkle) on
 solid navy, embedded directly in the file. The full logo's fine detail and text do not hold up at
 icon sizes, so this is a deliberately bolder mark rather than a shrunk copy.
+
+---
+
+## Correcting an invoice
+
+An invoice's figures are frozen at the moment it is generated, while Summary recalculates revenue
+from the appointments every time you look at it. Correct a past appointment in a month you have
+already invoiced and those two quietly stop agreeing — your books say one thing, the client was
+billed another.
+
+Since v1.4.0 the app checks for that on every visit to Invoices, and offers the fix that matches
+how far the invoice has got:
+
+| Where the invoice has got to | What you are offered |
+|---|---|
+| **Never sent** (Ready to Send) | **Update in place.** Same invoice number, figures refreshed. Nobody has seen the old version, so there is nothing to keep. |
+| **Sent, or already paid** | **Void & Re-issue.** The original is kept and marked VOID; a replacement is issued with the next number. |
+
+**Void & Re-issue** does all of this in one go: stamps the original PDF **VOID** across the figures
+(still readable — it is a record, not a redaction), replaces the Dropbox copy with a
+`… - VOID.pdf` version, issues the replacement, and prints a cross-reference on both PDFs so the
+client can see why two invoices arrived for the same month. Voided invoices move to their own
+section at the bottom of the page and are never counted as unpaid or chased.
+
+One thing to watch: **voiding an invoice that was already paid leaves that payment unattached**,
+because the replacement is issued unpaid. The new invoice shows "Replaces … — £x already received
+against it" so the amount actually still owed stays visible, but reconciling it is a manual step.
 
 ---
 
@@ -174,11 +203,11 @@ icon sizes, so this is a deliberately bolder mark rather than a shrunk copy.
 - **Postcode lookup** (postcodes.io) and **mileage routing** (OpenRouteService) both need a
   connection. Both fail gracefully: manual address entry still works, and mileage reads as
   unavailable.
-- **A generated invoice is never recalculated, and cannot be deleted or amended in the app.** Its
-  line items are a snapshot taken when it was generated. So correcting a past appointment in a
-  month you have already invoiced will not update that invoice — the modal warns you before the
-  change, but putting it right (a corrected invoice, or an adjustment on the next one) is a manual
-  job outside the app for now.
+- **A generated invoice is still never recalculated automatically** — its line items are a snapshot
+  taken when it was generated. But as of v1.4.0 the app *notices* when they no longer match the
+  appointments and offers the right fix: an invoice that has never been sent is updated in place,
+  keeping its number; one that has already gone out is voided and replaced. See "Correcting an
+  invoice" below.
 - **The JSON backup import is a full replace, not a merge.** It wipes what is on the device and
   replaces it with the backup's contents. There is a confirmation step, and no undo afterwards. The
   same is true of Restore from Cloud.
