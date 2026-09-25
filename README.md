@@ -12,7 +12,7 @@ install.
 
 ## Status
 
-**Version 1.4.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
+**Version 1.5.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
 every delivery.
 
 All eight planned build stages are complete, plus the additions made since:
@@ -31,6 +31,7 @@ All eight planned build stages are complete, plus the additions made since:
 | — | Cross-day diary drag, salary log, message templates | ✅ Done |
 | — | Historic appointment corrections + reinstating a cancelled occurrence | ✅ Done |
 | — | Invoice drift detection, amend-while-ready, void &amp; re-issue once sent | ✅ Done |
+| — | Editing a recurring appointment asks "this occurrence or all future" after Save | ✅ Done |
 
 **Not yet done — Stage 9 (integration pass):** a full pass on a real iPhone in standalone
 (home-screen) PWA mode. iOS Safari's PWA mode has known quirks — `visualViewport` handling,
@@ -91,6 +92,11 @@ Six tabs.
   target column highlights and a line shows exactly where it will land. One-off adjustments (cancel
   or move a single occurrence) never touch the recurring template — you are asked whether a change
   applies **just this once** or **from now on**.
+  Tapping an appointment works the same way: change the client or the hours and press Save, and a
+  recurring appointment then asks **Just this occurrence** or **All future occurrences**. Only
+  "All future" asks for the date the change takes effect from (today at the earliest). So one
+  week's clean can be made longer without touching the rest of the series. Delete on a recurring
+  appointment ends the series from the date you tapped.
 - **Clients** — domestic or commercial, with a **versioned** hourly rate and address, payment
   method, phone, optional separate billing address, and the "Is Invoiced" flag that decides whether
   they ever appear on Invoices.

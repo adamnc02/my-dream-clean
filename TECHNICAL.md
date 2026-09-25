@@ -14,6 +14,7 @@ built and why. **Update this alongside README.md whenever a change touches how s
 4. [Versioned fields](#4-versioned-fields)
 5. [The appointment model](#5-the-appointment-model)
     - [5.1 Historic corrections (v1.3.0)](#51-historic-corrections-v130)
+    - [5.2 Editing a recurring occurrence: once or all future (v1.5.0)](#52-editing-a-recurring-occurrence-once-or-all-future-v150)
 6. [Diary — drag/drop model](#6-diary--dragdrop-model)
 7. [Shell, navigation and modals](#7-shell-navigation-and-modals)
 8. [Design system](#8-design-system)
@@ -178,8 +179,9 @@ the Diary grid only, and replaced with two guard rails.
 `applyHistoricOccurrenceCorrection`, *not* `applyTemplateEditForward`. This distinction is the
 whole point: `applyTemplateEditForward` with a past effective date would split the template there
 and apply the change to **every occurrence from that date to today** — the exact opposite of a
-one-off fix. The modal also hides the "Changes apply from" picker on a past edit, so no past
-effective date can reach the forward-edit path at all.
+one-off fix. Since v1.5.0 the edit modal has no effective-date picker at all (§5.2), and the
+once/future question that replaced it is only ever asked *after* this intercept, so no past
+effective date can reach the forward-edit path from a historic edit.
 
 `applyHistoricOccurrenceCorrection` has two sub-cases:
 
@@ -250,6 +252,67 @@ Do not "fix" this by widening the `isPast` gate. If it is ever revisited, note t
 decides it is in reinstate mode from `isPastDate`, not from whether the occurrence is cancelled —
 so rendering a future ghost without changing `openAppointmentModal` alongside it would open the
 ordinary edit modal and silently fail to un-cancel anything.
+
+### 5.2 Editing a recurring occurrence: once or all future (v1.5.0)
+
+Before v1.5.0 the edit modal carried a **"Changes apply from"** date picker, and every save of a
+template went through `applyTemplateEditForward`. So an edit always changed the series, and the
+only way to lengthen *one* week's clean was to cancel that occurrence and re-add it as a one-off.
+Drags already asked the question (§6); the tap-to-edit modal now asks it too, and in the same
+place: **after Save**, not before.
+
+`saveAppointment` decides the route, in this order:
+
+| Case | What happens |
+|---|---|
+| Past date, template | `applyHistoricOccurrenceCorrection`, **unchanged** (§5.1). No question. |
+| Template, client and duration both unchanged | The modal just closes. A forward edit with identical values would still split the record for nothing. |
+| Template, today or later, something changed | `openApptEditScopeModal` shows **`modal-appt-edit-scope`** over the edit modal. |
+| Ad-hoc, any date | Edited in place. It is already one date, so there is nothing to ask. |
+
+`modal-appt-edit-scope` is one sheet with two steps. Step one: **Just this occurrence** /
+**All future occurrences** / Cancel. "All future" swaps to step two: the **"Changes take effect
+from"** picker, defaulting to the tapped date, then Save / Back. The sheet sits *after*
+`modal-appointment` in the markup, so it stacks on top of it. The edit modal stays open underneath,
+so Cancel and Back return to it with the edited values intact. `finishApptEditScope` closes both.
+
+- **`applyApptEditOnce`** uses the same storage shape as a historic correction and a scope-`'once'`
+  cross-day move. If `templateResolvesToSingleDate`, the record *is* the occurrence and is edited in
+  place. Otherwise the date goes into `cancelledDates` and a stand-in `adhoc` record carries the
+  change, with the position copied over through `effectiveSlotOrder`. It is deliberately a sibling
+  of `applyHistoricOccurrenceCorrection`, not a call into it. That function also reinstates
+  cancellations and *is* the historic-edit contract, which this change had to leave untouched.
+- **`applyApptEditFuture`** calls `applyTemplateEditForward` from the picked date. That is the
+  pre-v1.5.0 behaviour, now with bounds it never had.
+
+> 🚨 **The picker is bounded, and validated twice.** The old picker accepted any date. Three
+> dates break the template, and each has a check:
+> - **A past date** rewrites every occurrence from then to today (§5.1).
+> - **A date before the record's own `effectiveFrom`** closes the record the day before it began.
+> - **A date after its `effectiveTo`** edits a version that no longer governs the slot.
+>
+> `openApptEditScopeModal` sets `min` to the later of today and `effectiveFrom`, and `max` to
+> `effectiveTo`. `applyApptEditFuture` re-checks both, because **iOS Safari's native date picker
+> ignores `min`/`max`**. Do not drop the JS check on the grounds that the input already has
+> bounds.
+
+> 🚨 **`replacesTemplateId` exists because of the client field.** `cancelledOccurrencesForDate`
+> hides a cancellation that has a same-day ad-hoc replacement (§5.1) by matching **client**. A
+> "just this occurrence" edit can change the client, so the stand-in no longer matches. Once the
+> date passed, a "Cancelled · tap to reinstate" ghost would appear beside the appointment that
+> replaced it. The stand-in therefore carries **`replacesTemplateId`** (the template's `id`), and
+> that is checked first. The client match stays in place for older records that predate the field.
+> Historic corrections do **not** set it: that path was left byte-for-byte as it was.
+
+**Delete now ends the series from the tapped date.** `deleteAppointment` used to read the same
+picker. With the picker gone, it uses the occurrence's own date. To end a series later, tap a
+later occurrence.
+
+**Check:** `scripts/verify-appt-edit-scope.js` (`TZ=Europe/London node scripts/verify-appt-edit-scope.js`).
+It extracts the real functions from `index.html`'s inline scripts and runs them against a stub DOM
+with a pinned "today". It covers once vs. future, the three picker bounds, the unchanged-save and
+ad-hoc routes, historic edits staying unchanged, and delete. Its CONTROL check deletes
+`replacesTemplateId` and confirms the ghost comes back.
 
 ---
 
@@ -796,7 +859,7 @@ Promise.all([ loadClients, ensureAppSettings, loadAppointments, loadInvoices, lo
 
 ## 23. Versioning
 
-No version was tracked before **v1.1.0**. Current: **v1.4.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
+No version was tracked before **v1.1.0**. Current: **v1.5.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
 the top of `index.html` and the **Version** line under README's `## Status` **together, on every
 delivery**.
 
