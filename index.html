@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- My Dream Clean — v1.4.0. No version was tracked before v1.1.0;
+<!-- My Dream Clean — v1.5.0. No version was tracked before v1.1.0;
      bump this comment (and README.md's Status line) on each future
      delivery so changes are traceable without digging through git log. -->
 <html lang="en">
@@ -1938,8 +1938,9 @@ h3 {
 <!-- ════════════════════════════════════════
      MODAL: APPOINTMENT — add/edit a Diary slot. Shared by weekday
      (recurring template) and weekend (ad-hoc) appointments; the
-     "Effective from" field and the recurring-only actions only show
-     when editing an existing template-type appointment.
+     recurring-only actions only show when editing an existing
+     template-type appointment. The once/future scope of an edit is asked
+     after Save, in modal-appt-edit-scope (v1.5.0).
 ═══════════════════════════════════════════ -->
 <div class="modal-overlay" id="modal-appointment">
   <div class="modal-sheet">
@@ -1971,13 +1972,9 @@ h3 {
       <div class="form-hint">0.5–6 hours, in 30-minute increments.</div>
     </div>
 
-    <div class="form-group" id="appt-effective-group" style="display:none;">
-      <div class="effective-date-row">
-        <span class="form-hint">Changes apply from</span>
-        <input type="date" id="appt-effective-date">
-      </div>
-      <div class="form-hint">Past occurrences of this recurring slot are never changed.</div>
-    </div>
+    <!-- No "Changes apply from" picker here since v1.5.0 — the scope of an
+         edit to a recurring slot is asked AFTER Save, in modal-appt-edit-scope
+         below, so a single occurrence's length/client can be changed too. -->
 
     <button class="btn btn-primary" id="appt-save-btn" style="width:100%; margin-top:8px;" onclick="saveAppointment()">Save</button>
 
@@ -1990,6 +1987,47 @@ h3 {
         <div style="height:10px;"></div>
         <button class="btn btn-secondary" style="width:100%;color:var(--red);border-color:var(--red);" onclick="deleteAppointment()">Delete<span id="appt-delete-label"></span></button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     MODAL: APPOINTMENT EDIT SCOPE (v1.5.0) — shown on Save when a
+     today/future occurrence of a recurring (template) slot has had its
+     client or duration changed. Two steps in one sheet: first "this
+     occurrence or all future", then — for all future only — the date
+     the change takes effect from. Sits AFTER modal-appointment in the DOM
+     so it stacks over it; the edit modal stays open underneath, so Cancel
+     and Back return to it with the edited values intact. Never shown for
+     a past date (historic corrections are always single-occurrence, §5.1)
+     or an ad-hoc appointment (it is already a single date).
+═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-appt-edit-scope">
+  <div class="modal-sheet">
+    <div class="modal-handle-row">
+      <div class="modal-handle"></div>
+    </div>
+    <div id="appt-scope-step-choice">
+      <div class="modal-title">Apply this change to…</div>
+      <div class="form-hint" id="appt-scope-hint" style="margin-bottom:18px;">This slot is part of a recurring appointment. Should the change apply just to this occurrence, or to every future occurrence too?</div>
+      <button class="btn btn-primary" style="width:100%;" onclick="applyApptEditOnce()">Just this occurrence</button>
+      <div style="height:10px;"></div>
+      <button class="btn btn-secondary" style="width:100%;" onclick="showApptScopeDateStep()">All future occurrences</button>
+      <div style="height:10px;"></div>
+      <button class="btn btn-secondary" style="width:100%;" onclick="closeModal('modal-appt-edit-scope')">Cancel</button>
+    </div>
+    <div id="appt-scope-step-date" style="display:none;">
+      <div class="modal-title">All future occurrences</div>
+      <div class="form-group">
+        <div class="effective-date-row">
+          <span class="form-hint">Changes take effect from</span>
+          <input type="date" id="appt-effective-date">
+        </div>
+        <div class="form-hint">Past occurrences of this recurring slot are never changed.</div>
+      </div>
+      <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="applyApptEditFuture()">Save</button>
+      <div style="height:10px;"></div>
+      <button class="btn btn-secondary" style="width:100%;" onclick="showApptScopeChoiceStep()">Back</button>
     </div>
   </div>
 </div>
@@ -3829,6 +3867,11 @@ async function buildAddressValue(postcode, line1, line2, previousAddr) {
 //     the old record and are never retroactively changed)
 //   cancelledDates: ['YYYY-MM-DD', ...]                     (template only —
 //     single-occurrence cancellations that don't touch the template)
+//   replacesTemplateId: id|undefined                        (adhoc only,
+//     optional, v1.5.0 — set on the stand-in record a "just this
+//     occurrence" edit creates, naming the template it stands in for, so
+//     cancelledOccurrencesForDate never ghosts that cancellation even when
+//     the client was changed. Absent on all older records.)
 //
 // Two pages share this data/logic but present it differently:
 //   Home  — single day at a time, chevron + tap-to-pick-date navigation.
@@ -3995,13 +4038,20 @@ function cancelledOccurrencesForDate(dateStr) {
   // read as a double booking, so those are filtered out. A cancellation with
   // no same-day replacement is a real gap and still gets its ghost, including
   // the origin day of a cross-day move.
-  const replacedClientIds = new Set(
-    appState.appointments.filter(a => a.type === 'adhoc' && a.date === dateStr).map(a => a.clientId)
-  );
+  //
+  // Matching by client alone misses a "just this occurrence" edit that
+  // changed the client (v1.5.0) — the stand-in has a different clientId, so
+  // once the date passed it would sprout a ghost of the original. Those
+  // stand-ins carry replacesTemplateId, which is matched first; the client
+  // match stays for older records that predate the field.
+  const sameDayAdhoc = appState.appointments.filter(a => a.type === 'adhoc' && a.date === dateStr);
+  const replacedClientIds = new Set(sameDayAdhoc.map(a => a.clientId));
+  const replacedTemplateIds = new Set(sameDayAdhoc.map(a => a.replacesTemplateId).filter(Boolean));
   return appState.appointments.filter(a =>
     a.type === 'template' && a.template === letter && a.dayOfWeek === dow &&
     a.effectiveFrom <= dateStr && (a.effectiveTo === null || a.effectiveTo >= dateStr) &&
     (a.cancelledDates || []).includes(dateStr) &&
+    !replacedTemplateIds.has(a.id) &&
     !replacedClientIds.has(a.clientId)
   ).sort((a, b) => effectiveSlotOrder(a, dateStr) - effectiveSlotOrder(b, dateStr));
 }
@@ -4777,7 +4827,6 @@ function openAppointmentModal(id, dateStr, refreshFn) {
   document.getElementById('appt-no-clients-hint').style.display = clients.length === 0 ? 'block' : 'none';
   selectEl.disabled = clients.length === 0;
 
-  const effGroup = document.getElementById('appt-effective-group');
   const existingActions = document.getElementById('appt-existing-actions');
   const cancelBtn = document.getElementById('appt-cancel-occurrence-btn');
   const deleteLabel = document.getElementById('appt-delete-label');
@@ -4802,11 +4851,10 @@ function openAppointmentModal(id, dateStr, refreshFn) {
     document.getElementById('appt-duration-input').value = appt.durationHours;
     existingActions.style.display = 'block';
     if (appt.type === 'template') {
-      // A past edit is a single-occurrence correction by definition, so the
-      // "changes apply from" picker is meaningless — hide it rather than let
-      // a past effective date reach applyTemplateEditForward (guard rail 1).
-      effGroup.style.display = isHistoric ? 'none' : 'block';
-      document.getElementById('appt-effective-date').value = dateStr;
+      // No effective-date picker here since v1.5.0: the once/future question
+      // is asked after Save (openApptEditScopeModal), and never for a past
+      // date — a past edit is a single-occurrence correction by definition
+      // (guard rail 1), so saveAppointment routes it before the question.
       cancelBtn.style.display = 'block';
       deleteLabel.textContent = ' recurring slot';
       // Truncating a recurring slot from a PAST date would delete history
@@ -4820,7 +4868,6 @@ function openAppointmentModal(id, dateStr, refreshFn) {
         saveBtn.textContent = 'Reinstate this occurrence';
       }
     } else {
-      effGroup.style.display = 'none';
       cancelBtn.style.display = 'none';
       deleteLabel.textContent = ' appointment';
     }
@@ -4829,7 +4876,6 @@ function openAppointmentModal(id, dateStr, refreshFn) {
     document.getElementById('appt-modal-title').textContent = 'Add Appointment';
     if (clients[0]) selectEl.value = clients[0].id;
     document.getElementById('appt-duration-input').value = '';
-    effGroup.style.display = 'none';
     existingActions.style.display = 'none';
   }
   openModalEl('modal-appointment');
@@ -4953,10 +4999,13 @@ function saveAppointment() {
       return;
     }
     if (appt.type === 'template') {
-      const effDate = document.getElementById('appt-effective-date').value || ctxDate;
-      const updated = applyTemplateEditForward(appt, effDate, { clientId, durationHours: duration });
-      const ids = updated.id === appt.id ? [appt.id] : [appt.id, updated.id];
-      persistAppointments(ids).then(() => { closeModal('modal-appointment'); refresh(); });
+      // Nothing changed — there is no scope to ask about, and a forward edit
+      // with identical values would still split the template for no reason.
+      if (appt.clientId === clientId && appt.durationHours === duration) {
+        closeModal('modal-appointment');
+        return;
+      }
+      openApptEditScopeModal(appt, ctxDate, { clientId, durationHours: duration }, refresh);
     } else {
       // Past ad-hoc records are editable in place as of v1.3.0 — they already
       // represent a single date, so there is no scope question to resolve.
@@ -5045,6 +5094,109 @@ function templateResolvesToSingleDate(appt, dateStr) {
   return true;
 }
 
+// ── Edit scope for a today/future recurring occurrence (v1.5.0) ───────
+// Until v1.5.0 the edit modal carried a "Changes apply from" date picker
+// and every save went through applyTemplateEditForward — so the only way to
+// change ONE occurrence's length was to cancel it and re-add a one-off.
+// Now the question is asked after Save, the same way a drag asks it
+// (modal-reorder-scope): "Just this occurrence" or "All future
+// occurrences", and only the latter shows the date picker.
+//
+// Never reached for a past date (saveAppointment routes those to
+// applyHistoricOccurrenceCorrection first — guard rail 1, §5.1) or for an
+// ad-hoc record, which is already a single date.
+let _apptEditScopeCtx = null; // { appt, dateStr, changes, refresh } — set on open, cleared on apply
+
+function openApptEditScopeModal(appt, dateStr, changes, refresh) {
+  _apptEditScopeCtx = { appt, dateStr, changes, refresh };
+  // The picker's floor is today (a forward edit from a past date would
+  // rewrite history — §5.1) or the record's own start, whichever is later:
+  // applyTemplateEditForward closes the record the day BEFORE the effective
+  // date, so a date before effectiveFrom would leave it ending before it
+  // began. Its ceiling is the record's own end, since beyond that a
+  // different version (or nothing) governs the slot.
+  const today = getLocalToday();
+  const input = document.getElementById('appt-effective-date');
+  input.min = compareDateStr(appt.effectiveFrom, today) > 0 ? appt.effectiveFrom : today;
+  input.max = appt.effectiveTo || '';
+  input.value = dateStr;
+  showApptScopeChoiceStep();
+  openModalEl('modal-appt-edit-scope');
+}
+
+function showApptScopeChoiceStep() {
+  document.getElementById('appt-scope-step-choice').style.display = 'block';
+  document.getElementById('appt-scope-step-date').style.display = 'none';
+}
+function showApptScopeDateStep() {
+  document.getElementById('appt-scope-step-choice').style.display = 'none';
+  document.getElementById('appt-scope-step-date').style.display = 'block';
+}
+
+function finishApptEditScope(ids, refresh) {
+  persistAppointments(ids).then(() => {
+    closeModal('modal-appt-edit-scope');
+    closeModal('modal-appointment');
+    refresh();
+  });
+}
+
+// "Just this occurrence" — same storage shape as a historic correction and
+// a scope-'once' cross-day move: if the template record already governs
+// only this date it IS the occurrence and is edited in place; otherwise the
+// date is cancelled on the template and a stand-in ad-hoc record carries
+// the change, keeping the occurrence's position via effectiveSlotOrder.
+// Deliberately a sibling of applyHistoricOccurrenceCorrection rather than a
+// call into it: that path also reinstates cancellations and is the
+// historic-edit contract, which this change must leave untouched.
+function applyApptEditOnce() {
+  const ctx = _apptEditScopeCtx;
+  if (!ctx) return;
+  _apptEditScopeCtx = null;
+  const { appt, dateStr, changes, refresh } = ctx;
+  const ids = [appt.id];
+  if (templateResolvesToSingleDate(appt, dateStr)) {
+    Object.assign(appt, changes);
+  } else {
+    appt.cancelledDates = appt.cancelledDates || [];
+    if (!appt.cancelledDates.includes(dateStr)) appt.cancelledDates.push(dateStr);
+    const replacement = {
+      id: uuid(), type: 'adhoc', template: null, dayOfWeek: null, date: dateStr,
+      clientId: changes.clientId, durationHours: changes.durationHours,
+      slotOrder: effectiveSlotOrder(appt, dateStr),
+      effectiveFrom: null, effectiveTo: null, cancelledDates: [],
+      replacesTemplateId: appt.id,
+    };
+    appState.appointments.push(replacement);
+    ids.push(replacement.id);
+  }
+  finishApptEditScope(ids, refresh);
+}
+
+// "All future occurrences" — the pre-v1.5.0 behaviour, from the date picked
+// in step two. Validated here as well as by the input's min/max, because
+// iOS Safari's native date picker does not enforce min/max.
+function applyApptEditFuture() {
+  const ctx = _apptEditScopeCtx;
+  if (!ctx) return;
+  const input = document.getElementById('appt-effective-date');
+  const effDate = input.value;
+  if (!effDate) { alert('Pick the date the change takes effect from.'); return; }
+  if (compareDateStr(effDate, input.min) < 0) {
+    alert('The change can’t take effect before ' + formatDateUK(input.min) + '.');
+    return;
+  }
+  if (input.max && compareDateStr(effDate, input.max) > 0) {
+    alert('This version of the recurring slot ends on ' + formatDateUK(input.max) + ', so the change must take effect by then.');
+    return;
+  }
+  _apptEditScopeCtx = null;
+  const { appt, changes, refresh } = ctx;
+  const updated = applyTemplateEditForward(appt, effDate, changes);
+  const ids = updated.id === appt.id ? [appt.id] : [appt.id, updated.id];
+  finishApptEditScope(ids, refresh);
+}
+
 function cancelAppointmentOccurrence() {
   if (!_editingAppointmentId) return;
   const appt = appState.appointments.find(a => a.id === _editingAppointmentId);
@@ -5070,7 +5222,10 @@ function deleteAppointment() {
   const ctxDate = _apptModalCtx.date;
   const refresh = _apptModalCtx.refresh;
   if (appt.type === 'template') {
-    const effDate = document.getElementById('appt-effective-date').value || ctxDate;
+    // Since v1.5.0 there is no effective-date picker in the edit modal, so
+    // the series ends from the occurrence that was tapped. To end it from a
+    // later date, tap that date's occurrence instead.
+    const effDate = ctxDate;
     showConfirm('Delete this recurring slot? It will stop from this date onward — past occurrences stay in history.', () => {
       if (appt.effectiveFrom === effDate) {
         // Never actually occurred before being deleted — safe to remove outright.
