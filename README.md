@@ -12,7 +12,7 @@ install.
 
 ## Status
 
-**Version 1.5.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
+**Version 1.5.1** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
 every delivery.
 
 All eight planned build stages are complete, plus the additions made since:
@@ -32,6 +32,7 @@ All eight planned build stages are complete, plus the additions made since:
 | — | Historic appointment corrections + reinstating a cancelled occurrence | ✅ Done |
 | — | Invoice drift detection, amend-while-ready, void &amp; re-issue once sent | ✅ Done |
 | — | Editing a recurring appointment asks "this occurrence or all future" after Save | ✅ Done |
+| — | Invoice PDFs show a commercial client's vendor number even when it was added after the invoice was generated | ✅ Done |
 
 **Not yet done — Stage 9 (integration pass):** a full pass on a real iPhone in standalone
 (home-screen) PWA mode. iOS Safari's PWA mode has known quirks — `visualViewport` handling,
