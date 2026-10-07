@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- My Dream Clean — v1.5.0. No version was tracked before v1.1.0;
+<!-- My Dream Clean — v1.5.1. No version was tracked before v1.1.0;
      bump this comment (and README.md's Status line) on each future
      delivery so changes are traceable without digging through git log. -->
 <html lang="en">
@@ -6101,6 +6101,19 @@ function wireInvoiceSwipeGestures() {
   });
 }
 
+// The vendor number is the client's reference for this business, not a
+// term of the invoice, so it does not follow the statement-date rule the
+// rest of the card does. The card on the statement date wins when it has
+// one; otherwise the current card's is used. Without the fallback, a
+// vendor number added after an invoice was generated never reaches that
+// invoice, because every Share/Download rebuilds it from the
+// statement-date card, which predates the number.
+function invoiceVendorNumber(client, clientSnap) {
+  if (clientSnap.clientType === 'commercial' && clientSnap.vendorNumber) return clientSnap.vendorNumber;
+  const current = clientCurrentSnapshot(client) || {};
+  return current.clientType === 'commercial' && current.vendorNumber ? current.vendorNumber : null;
+}
+
 // ── PDF generation (spec 5.4.1) ─────────────────────────────────────
 // jsPDF is embedded inline (see the <script> block above the main app
 // script) rather than loaded from a CDN, so invoice generation works
@@ -6141,9 +6154,10 @@ function buildInvoicePdfBlob(invoice, client) {
   if (bizAddr && bizAddr.line1) { doc.text(bizAddr.line1, rightX, ry, { align: 'right' }); ry += 14; }
   if (bizAddr && bizAddr.line2) { doc.text(bizAddr.line2, rightX, ry, { align: 'right' }); ry += 14; }
   if (bizAddr && bizAddr.postcode) { doc.text(bizAddr.postcode, rightX, ry, { align: 'right' }); ry += 14; }
-  if (clientSnap.clientType === 'commercial' && clientSnap.vendorNumber) {
+  const vendorNumber = invoiceVendorNumber(client, clientSnap);
+  if (vendorNumber) {
     doc.setFont('helvetica', 'bold');
-    doc.text('Vendor #: ' + clientSnap.vendorNumber, rightX, ry, { align: 'right' }); ry += 14;
+    doc.text('Vendor #: ' + vendorNumber, rightX, ry, { align: 'right' }); ry += 14;
   }
 
   y = Math.max(y, ry) + 20;

@@ -374,10 +374,11 @@ tappable for a correction as of v1.3.0 but is never draggable, and `moveOccurren
 refuses past dates on both sides regardless) and a **holiday day** (which never renders slots to
 drop into in the first place).
 
-> **This drag idiom has been ported outward.** BLOC's plan page and Listly's shopping lists both
-> use the landing-indicator visual from here. Listly could not reuse the *mechanism*, though: HTML5
-> drag-and-drop events do not fire from touch on iPhone Safari, so it re-implemented the gesture on
-> Pointer Events. If this file ever needs to work from touch, that is the reference.
+> **This drag idiom has been ported outward**, to BLOC's plan page and Listly's shopping lists. It
+> works from touch on iPhone Safari and from a mouse, with the HTML5 mechanism above and no touch
+> shim: the day highlight and the landing indicator both show. Listly implements the same gesture on
+> Pointer Events so that one implementation covers touch, pen and mouse, not because this one fails
+> on touch.
 
 ---
 
@@ -442,8 +443,9 @@ dateStr)`, `clientCurrentSnapshot`, `clientCurrentRate` and `clientCurrentAddres
 accessors — **use them rather than reading a field off the client directly**, or a past figure will
 silently follow a later edit.
 
-A snapshot carries: name, client type (domestic / commercial), active flag, `isInvoiced`, payment
-method, phone, rate (see below), address, and an optional separate billing address (shown only for
+A snapshot carries: name, client type (domestic / commercial), vendor number (commercial only),
+active flag, `isInvoiced`, payment method, phone, rate (see below), address, and an optional
+separate billing address (shown only for
 the client types that can have one — `updateBillingAddressVisibility`).
 
 **Rate is entered as an amount for a duration**, not as a bare hourly figure:
@@ -580,6 +582,18 @@ the outstanding amount stays visible. Reconciling it is manual.
 `buildInvoicePdfBlob(invoice, client)` draws the document with **jsPDF, bundled inline**: logo,
 business details and address as they were on the statement date, client name and billing address,
 the line items, the total, and the bank payment instructions.
+
+**Vendor number (v1.5.1)** — printed as `Vendor #:` under the business address for a commercial
+client, via `invoiceVendorNumber(client, clientSnap)`. It is the one card field that does **not**
+follow the statement-date rule: the statement-date card's vendor number wins when it has one,
+otherwise the **current** card's is used. A vendor number is the client's reference for this
+business, not a term of the invoice.
+
+> 🚨 **The trap:** reading `clientSnap.vendorNumber` alone. The PDF is rebuilt on every
+> Share/Download, but always from the statement-date card, so a vendor number added after an
+> invoice was generated (the usual order: the client asks for it on receiving the first invoice)
+> never appears on that invoice however many times it is re-shared. `scripts/verify-invoice-vendor-number.js`
+> reproduces that case as its control.
 
 The line-item table is **Date / Qty (hrs) / Total** — the per-hour **Price column was dropped at
 Ella's request on 2026-09-24**. `rate` is still stored on every line item and must stay: it is what
@@ -859,7 +873,7 @@ Promise.all([ loadClients, ensureAppSettings, loadAppointments, loadInvoices, lo
 
 ## 23. Versioning
 
-No version was tracked before **v1.1.0**. Current: **v1.5.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
+No version was tracked before **v1.1.0**. Current: **v1.5.1**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
 the top of `index.html` and the **Version** line under README's `## Status` **together, on every
 delivery**.
 
