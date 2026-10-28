@@ -23,7 +23,7 @@ function extract(name) {
   for (; j < src.length; j++) { const c = src[j]; if (c === '{') depth++; else if (c === '}') { depth--; if (!depth) break; } }
   return src.slice(m.index, j + 1);
 }
-const names = ['toLocalDateStr','parseLocalDateStr','addDays','compareDateStr','getDayOfWeekKey','isWeekend',
+const names = ['toLocalDateStr','parseLocalDateStr','addDays','compareDateStr','getDayOfWeekKey','isNonWorkingDay',
  'getMondayOfWeek','getWeekLetter','isPastDate','effectiveSlotOrder','getOccurrencesForDate','cancelledOccurrencesForDate',
  'applyTemplateEditForward','templateResolvesToSingleDate','applyHistoricOccurrenceCorrection','saveAppointment',
  'openApptEditScopeModal','showApptScopeChoiceStep','showApptScopeDateStep','finishApptEditScope',

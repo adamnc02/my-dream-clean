@@ -12,7 +12,7 @@ install.
 
 ## Status
 
-**Version 1.7.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
+**Version 1.8.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
 every delivery.
 
 All eight planned build stages are complete, plus the additions made since:
@@ -35,6 +35,7 @@ All eight planned build stages are complete, plus the additions made since:
 | — | Invoice PDFs show a commercial client's vendor number even when it was added after the invoice was generated | ✅ Done |
 | — | An invoiced client who pays cash is invoiced for every visit, and still kept out of the money figures | ✅ Done |
 | — | Invoices can be generated in the last 10 days of the month, including the visits still to come | ✅ Done |
+| — | Saturday is a full working day: a Diary column, recurring slots, and counted everywhere | ✅ Done |
 
 **Not yet done — Stage 9 (integration pass):** a full pass on a real iPhone in standalone
 (home-screen) PWA mode. iOS Safari's PWA mode has known quirks — `visualViewport` handling,
@@ -88,9 +89,9 @@ Six tabs.
 - **Home** — one day at a glance: each appointment's client, duration, and the address that was
   current *on that date*. Rows are sized proportionally to their duration. Call and Message buttons
   sit inline on any row whose client has a mobile number, with Message offering your saved
-  templates. Weekends are skipped when stepping between days, and a holiday shows a banner instead
+  templates. Sunday is skipped when stepping between days, and a holiday shows a banner instead
   of a list. Home is deliberately **view-only** — all editing lives on Diary.
-- **Diary** — the recurring weekly planner, Mon–Fri as columns on a rotating **two-week A/B**
+- **Diary** — the recurring weekly planner, Mon–Sat as columns on a rotating **two-week A/B**
   schedule. Drag to reorder within a day, or onto a different day to move an appointment there: the
   target column highlights and a line shows exactly where it will land. One-off adjustments (cancel
   or move a single occurrence) never touch the recurring template — you are asked whether a change
@@ -231,5 +232,6 @@ against it" so the amount actually still owed stays visible, but reconciling it 
 - **Multi-device use is not supported.** This is a single-device app by design; the Dropbox
   connection covers wanting to see an invoice from a laptop, but two devices editing the same data
   will not converge.
-- **The diary is Monday–Friday.** Weekends only ever hold one-off appointments, never a recurring
-  template.
+- **The diary is Monday–Saturday**, six columns, which is tight on an iPhone-width screen. Saturday
+  works exactly like a weekday: recurring A/B slots, invoices, Summary and mileage. Sunday is not a
+  working day.
