@@ -12,7 +12,7 @@ install.
 
 ## Status
 
-**Version 1.6.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
+**Version 1.7.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
 every delivery.
 
 All eight planned build stages are complete, plus the additions made since:
@@ -34,6 +34,7 @@ All eight planned build stages are complete, plus the additions made since:
 | — | Editing a recurring appointment asks "this occurrence or all future" after Save | ✅ Done |
 | — | Invoice PDFs show a commercial client's vendor number even when it was added after the invoice was generated | ✅ Done |
 | — | An invoiced client who pays cash is invoiced for every visit, and still kept out of the money figures | ✅ Done |
+| — | Invoices can be generated in the last 10 days of the month, including the visits still to come | ✅ Done |
 
 **Not yet done — Stage 9 (integration pass):** a full pass on a real iPhone in standalone
 (home-screen) PWA mode. iOS Safari's PWA mode has known quirks — `visualViewport` handling,
@@ -104,7 +105,11 @@ Six tabs.
   they ever appear on Invoices.
 - **Invoices** — a live **Ready to Send** queue computed from completed appointments, with no
   manual data entry: a client/month pairing appears once that month has no further appointments to
-  come. Generate a PDF with your logo, business details and bank payment instructions; numbering is
+  come — or, for the current month, from the **last 10 days of the month** (the 22nd of October, the
+  19th of a 28-day February), with the visits still to come included on the invoice. Those visits are
+  marked "still to come" before you generate and on the invoice afterwards: if one is then cancelled,
+  the invoice needs a new one generating, and the app flags it (see "Correcting an invoice").
+  Cancelling or deleting such a visit in Diary says so in its confirmation too. Generate a PDF with your logo, business details and bank payment instructions; numbering is
   sequential per financial year; then a pre-filled email send flow and Outstanding → Paid tracking.
   A queue entry can be swiped away if it should not be invoiced. The app also **watches for
   invoices that no longer match their appointments** — see below.

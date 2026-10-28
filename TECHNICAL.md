@@ -501,10 +501,39 @@ A client/month pair enters the queue when all of these hold:
 - `getClientCompletedOccurrencesInMonth` found at least one occurrence on or before today
   (weekends, holidays and dates failing `isInvoiceableClientOnDate` excluded — §5; a cash
   payment method does **not** exclude a visit here);
-- **the month is complete** — either it is a past month, or it has no future occurrence left;
+- **the month is complete** — either it is a past month, or it has no future occurrence left — **or
+  it is the current month and today is in the early-invoicing window** (`isInEarlyInvoiceWindow`:
+  the last `EARLY_INVOICE_WINDOW_DAYS` = 10 days of that month, so the 22nd of a 31-day month and
+  the 19th of a 28-day February). An early entry carries the still-to-come visits in `upcoming`,
+  and a client whose visits are *all* still to come is offered too;
 - no invoice already exists for that `clientId|periodKey`;
 - it has not been dismissed (swiped away — `dismissQueueEntry`, stored in
   `settings.dismissedQueueEntries`).
+
+**Early invoicing (v1.7.0).** `computeInvoiceFigures` builds line items from `occurred` **and**
+`upcoming` — every visit in the month — and generation and drift both go through it (§12.1). That
+is what keeps the two halves consistent:
+
+- an invoice generated in the window matches its appointments at once, rather than reading as
+  "changed" because the visits still to come were left out of the recomputed figures;
+- a still-to-come visit **cancelled after generating** drops out of the recomputed figures, so drift
+  fires and offers Update (unsent) or Void & Re-issue (sent). No new mechanism; the window relies on
+  §12.1 entirely.
+
+A finished month has no `upcoming` visits, so this changes nothing outside the window.
+
+🚨 **The queue entry's `occurred` stays occurred-only.** `getUngeneratedInvoicesValue` (Summary's
+not-yet-generated figure) reads it, and a visit that has not happened is not earned yet.
+`totalHours` and the invoice itself include `upcoming`.
+
+**Where the still-to-come visits are highlighted:** the queue row (`N still to come` in the
+sub-line, each such line marked "to come", and `upcomingVisitsNoteHtml` above Generate); every
+generated non-void invoice whose line items include a date after today (`invoiceUpcomingHtml`,
+gone once the last date arrives); and the Cancel / Delete confirmations in the appointment modal
+for a future visit already on a non-void invoice (`upcomingInvoiceWarning`, which names the
+invoice and whether the fix is Update or Void & Re-issue). The PDF is unchanged — the note is for
+the app's user, not the client. Summary's **Unpaid Invoices** counts an early invoice at its full
+total, still-to-come visits included, since that is what it bills.
 
 ### Numbering, labels and filenames
 
@@ -896,7 +925,7 @@ Promise.all([ loadClients, ensureAppSettings, loadAppointments, loadInvoices, lo
 
 ## 23. Versioning
 
-No version was tracked before **v1.1.0**. Current: **v1.6.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
+No version was tracked before **v1.1.0**. Current: **v1.7.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
 the top of `index.html` and the **Version** line under README's `## Status` **together, on every
 delivery**.
 
