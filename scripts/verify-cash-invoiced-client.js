@@ -30,7 +30,7 @@ const names = ['toLocalDateStr', 'parseLocalDateStr', 'addDays', 'compareDateStr
   'isBillableClientOnDate', 'isInvoiceableClientOnDate', 'invoicableClients', 'getClientEarliestPossibleDate',
   'monthKeysBetween', 'getClientCompletedOccurrencesInMonth', 'getInvoiceQueue', 'computeInvoiceFigures', 'invoiceDrift',
   'getUnpaidInvoicesTotal', 'invoiceBillableTotal', 'getUngeneratedInvoicesValue', 'getRevenueForRange',
-  'getCashRevenueForRange', 'billableOccurrencesOnDate'];
+  'getCashRevenueForRange', 'billableOccurrencesOnDate', 'isInEarlyInvoiceWindow'];
 let pass = 0, fail = 0;
 function ok(c, msg) { if (c) { pass++; console.log('✓ ' + msg); } else { fail++; console.log('✗ ' + msg); } }
 
@@ -61,7 +61,7 @@ function mkCtx(today, invoices) {
     DAY_KEYS: ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'],
     appState: { clients: [H, L, Z], appointments: APPTS, invoices: invoices || [],
       settings: { weekAbReferenceMonday: '2026-08-03', holidays: [], dismissedQueueEntries: [] } },
-    getLocalToday: () => today,
+    getLocalToday: () => today, EARLY_INVOICE_WINDOW_DAYS: 10,
   };
   vm.createContext(ctx);
   vm.runInContext(names.map(extract).join('\n'), ctx);
@@ -82,10 +82,11 @@ ok(e && e.occurred.length === 9 && e.totalHours === 27, 'H October queue entry c
 ok(c.computeInvoiceFigures('H', '2026-10').total === 472.5, 'H October invoice figures £472.50 (9 × £52.50)');
 ok(c.computeInvoiceFigures('H', '2026-09').lineItems.length === 9, 'H September (bank transfer) unchanged: 9 lines');
 
-// Month-complete still waits for the last visit, cash or not
-let early = mkCtx('2026-10-28');
+// Month-complete still waits for the last visit, cash or not (21 Oct is the
+// day before v1.7.0's early-invoicing window opens)
+let early = mkCtx('2026-10-21');
 const g = early.getClientCompletedOccurrencesInMonth('H', '2026-10');
-ok(g.occurred.length === 8 && g.hasFuture === true, 'on 28 Oct: 8 visits done, 29 Oct still to come');
+ok(g.occurred.length === 6 && g.hasFuture === true, 'on 21 Oct: 6 visits done, 22/27/29 Oct still to come');
 ok(!q(early).includes('H|2026-10'), '…so October is NOT offered before the month is finished');
 
 // Invoiced-at-the-date, not today's card

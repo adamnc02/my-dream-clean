@@ -27,7 +27,7 @@ const names = ['toLocalDateStr','parseLocalDateStr','addDays','compareDateStr','
  'getMondayOfWeek','getWeekLetter','isPastDate','effectiveSlotOrder','getOccurrencesForDate','cancelledOccurrencesForDate',
  'applyTemplateEditForward','templateResolvesToSingleDate','applyHistoricOccurrenceCorrection','saveAppointment',
  'openApptEditScopeModal','showApptScopeChoiceStep','showApptScopeDateStep','finishApptEditScope',
- 'applyApptEditOnce','applyApptEditFuture','deleteAppointment','formatDateUK'];
+ 'applyApptEditOnce','applyApptEditFuture','deleteAppointment','formatDateUK','upcomingInvoiceWarning'];
 let pass = 0, fail = 0;
 function ok(c, msg) { if (c) { pass++; console.log('✓ ' + msg); } else { fail++; console.log('✗ ' + msg); } }
 function mkCtx(today) {

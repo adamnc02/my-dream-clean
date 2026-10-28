@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- My Dream Clean — v1.6.0. No version was tracked before v1.1.0;
+<!-- My Dream Clean — v1.7.0. No version was tracked before v1.1.0;
      bump this comment (and README.md's Status line) on each future
      delivery so changes are traceable without digging through git log. -->
 <html lang="en">
@@ -3234,7 +3234,7 @@ function startInvoicesTour() {
         body: 'Everything on this page is scoped to the current tax year (1 Apr \u2013 31 Mar).' },
       { targetId: 'invoices-body', screen: 'invoices',
         title: 'Ready to Send, automatically',
-        body: 'Once a client\u2019s appointments for the month are complete, they\u2019ll appear here on their own \u2014 no manual invoice-run needed.' },
+        body: 'Once a client\u2019s appointments for the month are complete, they\u2019ll appear here on their own \u2014 no manual invoice-run needed. In the last 10 days of the month they appear early, with the visits still to come included.' },
       // Steps below target the first live Ready to Send queue row —
       // found dynamically (same pattern BLOC's Train Mini-Tour uses for
       // its progression selector) since a brand-new account may have
@@ -3250,7 +3250,7 @@ function startInvoicesTour() {
         } },
       { targetId: '__mdc-tour-missing-generate__', screen: 'invoices',
         title: 'One tap to generate',
-        body: 'Generates a PDF with your logo, business details, and a line for every completed visit that period.',
+        body: 'Generates a PDF with your logo, business details, and a line for every visit that period \u2014 including any still to come, if you generate in the last 10 days of the month.',
         onEnter: (step) => {
           const queue = getInvoiceQueue();
           if (queue.length > 0) {
@@ -4828,6 +4828,21 @@ function invoiceCoveringDate(clientId, dateStr) {
   return (appState.invoices || []).find(inv => inv.clientId === clientId && inv.periodKey === periodKey) || null;
 }
 
+// The confirm-dialog sentence for cancelling or deleting FUTURE visits
+// that an invoice generated early already includes (v1.7.0). `fromDate`
+// alone checks that one date; with `toEnd` it checks that date onwards (a
+// recurring slot deleted from here). Void invoices are skipped so a voided
+// original never shadows its replacement. Returns '' when no invoice is
+// affected; past dates have their own wording and never reach this.
+function upcomingInvoiceWarning(clientId, fromDate, toEnd) {
+  const inv = (appState.invoices || []).find(i => i.clientId === clientId && i.status !== 'void'
+    && i.periodKey === fromDate.slice(0, 7)
+    && i.lineItems.some(li => toEnd ? compareDateStr(li.date, fromDate) >= 0 : li.date === fromDate));
+  if (!inv) return '';
+  return ` This visit is already on invoice ${inv.invoiceNumber}, so it will need a new invoice generating`
+    + (inv.status === 'ready' ? ' (Update, on Invoices).' : ' — it has been sent, so void it and re-issue (on Invoices).');
+}
+
 // Whether this client is one that gets invoiced at all, judged as at the
 // appointment's own date — same snapshot-on-date principle as rate and
 // address resolution, so a client who has since been switched to cash
@@ -5229,7 +5244,8 @@ function cancelAppointmentOccurrence() {
   // billing consequences the future-dated wording doesn't cover.
   const msg = isPastDate(ctxDate)
     ? 'Remove this past occurrence? It will drop out of your Summary figures, and any invoice already generated for that month will need correcting separately. The recurring slot is not affected.'
-    : 'Cancel this occurrence only? The recurring slot will continue on future weeks.';
+    : 'Cancel this occurrence only? The recurring slot will continue on future weeks.'
+      + upcomingInvoiceWarning(appt.clientId, ctxDate, false);
   showConfirm(msg, () => {
     appt.cancelledDates = appt.cancelledDates || [];
     if (!appt.cancelledDates.includes(ctxDate)) appt.cancelledDates.push(ctxDate);
@@ -5248,7 +5264,8 @@ function deleteAppointment() {
     // the series ends from the occurrence that was tapped. To end it from a
     // later date, tap that date's occurrence instead.
     const effDate = ctxDate;
-    showConfirm('Delete this recurring slot? It will stop from this date onward — past occurrences stay in history.', () => {
+    showConfirm('Delete this recurring slot? It will stop from this date onward — past occurrences stay in history.'
+      + (isPastDate(effDate) ? '' : upcomingInvoiceWarning(appt.clientId, effDate, true)), () => {
       if (appt.effectiveFrom === effDate) {
         // Never actually occurred before being deleted — safe to remove outright.
         appState.appointments = appState.appointments.filter(a => a.id !== appt.id);
@@ -5264,7 +5281,7 @@ function deleteAppointment() {
     // date, so removing it raises no scope question.
     showConfirm(isPastDate(appt.date)
       ? 'Delete this past appointment? It will drop out of your Summary figures, and any invoice already generated for that month will need correcting separately.'
-      : 'Delete this appointment?', () => {
+      : 'Delete this appointment?' + upcomingInvoiceWarning(appt.clientId, appt.date, false), () => {
       appState.appointments = appState.appointments.filter(a => a.id !== appt.id);
       dbDelete('appointments', appt.id).then(() => { closeModal('modal-appointment'); refresh(); });
     });
@@ -5330,8 +5347,9 @@ function monthKeysBetween(startMonthKey, endMonthKey) {
 }
 
 // Completed (occurred, on-or-before today) occurrences for a client in a
-// given calendar month, plus whether any future occurrence remains in
-// that same month (used to decide whether the period counts as "done").
+// given calendar month, plus the future ones still to come in that same
+// month (`upcoming`; `hasFuture` is just upcoming.length > 0, used to decide
+// whether the period counts as "done").
 // Holiday dates are excluded, same as dayUsedHours — no appointment
 // happens on a holiday, so nothing to bill.
 function getClientCompletedOccurrencesInMonth(clientId, monthKey) {
@@ -5340,6 +5358,7 @@ function getClientCompletedOccurrencesInMonth(clientId, monthKey) {
   const daysInMonth = new Date(y, m, 0).getDate();
   const today = getLocalToday();
   const occurred = [];
+  const upcoming = [];
   let hasFuture = false;
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -5354,13 +5373,27 @@ function getClientCompletedOccurrencesInMonth(clientId, monthKey) {
       occ.forEach(a => occurred.push({ date: dateStr, hours: a.durationHours }));
     } else {
       hasFuture = true;
+      occ.forEach(a => upcoming.push({ date: dateStr, hours: a.durationHours }));
     }
   }
-  return { occurred, hasFuture };
+  return { occurred, upcoming, hasFuture };
+}
+
+// The early-invoicing window (v1.7.0): the last 10 days of the month —
+// from the 22nd of a 31-day month, the 19th of a 28-day February. Inside
+// it, the CURRENT month's queue entry is offered before the month is
+// finished, with its still-to-come visits on the invoice.
+const EARLY_INVOICE_WINDOW_DAYS = 10;
+function isInEarlyInvoiceWindow(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return d > new Date(y, m, 0).getDate() - EARLY_INVOICE_WINDOW_DAYS;
 }
 
 // Builds the live "Ready to Send" queue — client/month combos with
-// completed appointments, no invoice yet, not dismissed. Capped to the
+// completed appointments, no invoice yet, not dismissed. A month is offered
+// once it is complete, or — for the current month only — once today is in
+// the early-invoicing window, in which case `upcoming` carries the visits
+// still to come and they go on the invoice too. Capped to the
 // most recent 24 months of backlog per client as a sanity bound, not a
 // real limit for a business invoicing monthly.
 function getInvoiceQueue() {
@@ -5382,12 +5415,15 @@ function getInvoiceQueue() {
     monthKeys.forEach(monthKey => {
       const key = client.id + '|' + monthKey;
       if (existingPeriods.has(key) || dismissed.has(key)) return;
-      const { occurred, hasFuture } = getClientCompletedOccurrencesInMonth(client.id, monthKey);
-      if (occurred.length === 0) return;
+      const { occurred, upcoming, hasFuture } = getClientCompletedOccurrencesInMonth(client.id, monthKey);
       const monthComplete = monthKey < currentMonthKey || !hasFuture;
-      if (!monthComplete) return;
-      const totalHours = occurred.reduce((s, o) => s + o.hours, 0);
-      queue.push({ clientId: client.id, monthKey, occurred, totalHours });
+      const early = !monthComplete && monthKey === currentMonthKey && isInEarlyInvoiceWindow(today);
+      if (!monthComplete && !early) return;
+      if (occurred.length + upcoming.length === 0) return;
+      // `occurred` stays occurred-only: Summary's not-yet-generated value
+      // reads it, and a visit that hasn't happened is not earned yet.
+      const totalHours = occurred.concat(upcoming).reduce((s, o) => s + o.hours, 0);
+      queue.push({ clientId: client.id, monthKey, occurred, upcoming, totalHours });
     });
   });
 
@@ -5483,8 +5519,13 @@ function invoiceFilename(invoice, client) {
 // the original generate did.
 function computeInvoiceFigures(clientId, monthKey) {
   const client = appState.clients.find(c => c.id === clientId);
-  const { occurred } = getClientCompletedOccurrencesInMonth(clientId, monthKey);
-  const lineItems = occurred.map(o => {
+  // Every visit in the month, still-to-come ones included (v1.7.0). That is
+  // what lets an invoice generated early in the early-invoicing window
+  // match its appointments — and what makes drift fire, offering Update or
+  // Void & Re-issue, when one of those future visits is later cancelled.
+  // A finished month has no upcoming visits, so this changes nothing there.
+  const { occurred, upcoming } = getClientCompletedOccurrencesInMonth(clientId, monthKey);
+  const lineItems = occurred.concat(upcoming).map(o => {
     const snap = clientSnapshotOn(client, o.date) || {};
     const rate = effectiveHourlyRate(snap.rateAmount, snap.rateDurationHours) || 0;
     return { date: o.date, hours: o.hours, rate, total: roundUpToNearestTenPence(o.hours * rate) };
@@ -5804,6 +5845,30 @@ function invoiceDriftHtml(inv) {
   </div>`;
 }
 
+// Visits still to come on an invoice or a queue entry (v1.7.0 — the
+// early-invoicing window). Shown before generating and on every generated,
+// non-void invoice until the last listed date has passed, because a
+// cancellation after generating is exactly what makes the invoice wrong.
+// The fix itself is the drift banner above: Update while unsent, Void &
+// Re-issue once sent. Returns '' when nothing is still to come.
+function upcomingVisitsNoteHtml(dates, generated) {
+  if (!dates.length) return '';
+  const n = dates.length;
+  const what = generated
+    ? 'If any of these is cancelled, this invoice will need a new one generating — it will be flagged here when that happens.'
+    : 'They\u2019ll be on the invoice. If any of them is cancelled after you generate it, you\u2019ll need to generate a new invoice — it will be flagged here when that happens.';
+  return `<div class="invoice-drift">
+    <div class="invoice-drift-title">Includes ${n} visit${n === 1 ? '' : 's'} still to come: ${dates.map(formatDateUK).join(', ')}</div>
+    <div class="invoice-drift-body">${what}</div>
+  </div>`;
+}
+
+function invoiceUpcomingHtml(inv) {
+  if (inv.status === 'void') return '';
+  const today = getLocalToday();
+  return upcomingVisitsNoteHtml(inv.lineItems.filter(li => compareDateStr(li.date, today) > 0).map(li => li.date), true);
+}
+
 // "Supersedes X (£y already received)" / "Superseded by X" — keeps the
 // pair legible in the list, and specifically keeps a payment made against
 // a now-void invoice visible, since voiding a paid invoice detaches it.
@@ -5849,7 +5914,7 @@ function renderInvoices() {
   const voided = appState.invoices.filter(i => i.status === 'void').sort((a, b) => compareDateStr(b.voidedDate || b.statementDate, a.voidedDate || a.statementDate));
 
   if (queue.length === 0 && readyInvoices.length === 0 && overdue.length === 0 && outstanding.length === 0 && paid.length === 0 && voided.length === 0) {
-    bodyEl.innerHTML = `<div class="empty-state">Nothing to invoice yet.<br>Completed appointments for invoiced clients will appear here once their month wraps up.</div>`;
+    bodyEl.innerHTML = `<div class="empty-state">Nothing to invoice yet.<br>Appointments for invoiced clients will appear here once their month wraps up, or from the last 10 days of the month.</div>`;
     return;
   }
 
@@ -5883,6 +5948,7 @@ function renderInvoices() {
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
               ${invoiceSupersedeHtml(inv)}
               ${invoiceDriftHtml(inv)}
+              ${invoiceUpcomingHtml(inv)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
@@ -5912,7 +5978,7 @@ function renderInvoices() {
             <div class="invoice-row-header" onclick="toggleInvoiceRow('${key}')">
               <div>
                 <div class="row-title">${escapeHtml(clientSnap ? clientSnap.name : 'Unknown client')} | ${monthLabel(q.monthKey)}</div>
-                <div class="row-sub">${q.occurred.length} appointment${q.occurred.length === 1 ? '' : 's'} · ${formatHours(q.totalHours)}</div>
+                <div class="row-sub">${q.occurred.length + q.upcoming.length} appointment${q.occurred.length + q.upcoming.length === 1 ? '' : 's'} · ${formatHours(q.totalHours)}${q.upcoming.length ? ` · ${q.upcoming.length} still to come` : ''}</div>
               </div>
               <div class="invoice-row-right">
                 <span class="chip chip-teal">Ready to send</span>
@@ -5921,6 +5987,8 @@ function renderInvoices() {
             </div>
             <div class="invoice-detail ${expanded ? 'open' : ''}">
               ${q.occurred.map(o => `<div class="invoice-line-row"><span>${formatDateUK(o.date)}</span><span>${formatHours(o.hours)}</span><span></span></div>`).join('')}
+              ${q.upcoming.map(o => `<div class="invoice-line-row"><span>${formatDateUK(o.date)}</span><span>${formatHours(o.hours)}</span><span>to come</span></div>`).join('')}
+              ${upcomingVisitsNoteHtml(q.upcoming.map(o => o.date), false)}
               <div class="invoice-actions-row">
                 <button class="btn btn-primary" onclick="event.stopPropagation(); generateInvoiceForQueueEntry('${q.clientId}','${q.monthKey}')">Generate Invoice</button>
               </div>
@@ -5952,6 +6020,7 @@ function renderInvoices() {
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
               ${invoiceSupersedeHtml(inv)}
               ${invoiceDriftHtml(inv)}
+              ${invoiceUpcomingHtml(inv)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
                 <button class="btn btn-primary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
@@ -5988,6 +6057,7 @@ function renderInvoices() {
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
               ${invoiceSupersedeHtml(inv)}
               ${invoiceDriftHtml(inv)}
+              ${invoiceUpcomingHtml(inv)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
@@ -6025,6 +6095,7 @@ function renderInvoices() {
               ${invoiceLineItemsHtml(inv.lineItems, inv.total)}
               ${invoiceSupersedeHtml(inv)}
               ${invoiceDriftHtml(inv)}
+              ${invoiceUpcomingHtml(inv)}
               <div class="invoice-actions-row">
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); previewInvoice('${inv.id}')">Preview</button>
                 <button class="btn btn-secondary" onclick="event.stopPropagation(); shareInvoice('${inv.id}')">Share</button>
