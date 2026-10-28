@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- My Dream Clean — v1.5.1. No version was tracked before v1.1.0;
+<!-- My Dream Clean — v1.6.0. No version was tracked before v1.1.0;
      bump this comment (and README.md's Status line) on each future
      delivery so changes are traceable without digging through git log. -->
 <html lang="en">
@@ -1679,7 +1679,7 @@ h3 {
         <button type="button" class="active" data-value="bank_transfer" onclick="setSegmented('client-payment-segmented', 'bank_transfer')">Bank transfer</button>
         <button type="button" data-value="cash" onclick="setSegmented('client-payment-segmented', 'cash')">Cash</button>
       </div>
-      <div class="form-hint">Cash-paying clients are excluded from mileage and reporting, same as £0-rate clients — still fully visible in Home and Diary.</div>
+      <div class="form-hint">Cash-paying clients are excluded from mileage and reporting, same as £0-rate clients — still fully visible in Home and Diary. A cash client set to Is Invoiced still gets every visit invoiced.</div>
     </div>
 
     <div class="form-group">
@@ -4077,10 +4077,32 @@ function effectiveSlotOrder(appt, dateStr) {
 // versioning principle as everywhere else — a rate that was £0 back
 // then but isn't now (or vice versa) reflects what was true at the
 // time.
+// Since v1.6.0 the Invoices page no longer uses this check for which
+// visits go on an invoice — an invoiced cash client is invoiced in full
+// (isInvoiceableClientOnDate, below). Mileage and every Summary figure,
+// including Summary's unpaid and not-yet-generated invoice values, still
+// go through this one.
 function isBillableClientOnDate(client, dateStr) {
   const snap = client ? clientSnapshotOn(client, dateStr) : null;
   if (!snap || snap.paymentMethod === 'cash') return false;
   return (snap.rateAmount || 0) > 0;
+}
+
+// ── Invoice inclusion (v1.6.0) ───────────────────────────────────────
+// The ONE exception to the cash rule above: an occurrence goes on an
+// invoice whenever the client is invoiced AT THAT DATE and the rate is
+// above £0 — payment method plays no part. An invoiced client who pays
+// cash (an invoice for their paperwork, paid in cash) gets
+// every visit on the invoice, while mileage, Summary revenue/profit and
+// Summary's invoice figures still exclude them via isBillableClientOnDate.
+//
+// 🚨 isInvoiced is checked at the occurrence's own date, not today's card.
+// Dropping the cash check alone would let a client who was cash and NOT
+// invoiced back then, but is invoiced now, suddenly grow queue entries for
+// those old months (up to the queue's 24-month backlog).
+function isInvoiceableClientOnDate(client, dateStr) {
+  const snap = client ? clientSnapshotOn(client, dateStr) : null;
+  return !!(snap && snap.isInvoiced && (snap.rateAmount || 0) > 0);
 }
 
 function dayUsedHours(dateStr) {
@@ -5322,11 +5344,10 @@ function getClientCompletedOccurrencesInMonth(clientId, monthKey) {
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     if (isWeekend(dateStr) || isHolidayDate(dateStr)) continue;
-    // Cash/£0-rate exclusion (spec 6.2) applies here too, not just via
-    // the Is Invoiced flag — a client could in principle be marked
-    // invoiced but have Cash selected, and this must still exclude
-    // those occurrences from ever reaching an invoice.
-    if (!isBillableClientOnDate(client, dateStr)) continue;
+    // Invoice inclusion, not the cash rule (v1.6.0): an invoiced client
+    // paying cash still gets every visit invoiced. A £0 rate, or a date
+    // on which the client was not invoiced, is still left off.
+    if (!isInvoiceableClientOnDate(client, dateStr)) continue;
     const occ = getOccurrencesForDate(dateStr).filter(a => a.clientId === clientId);
     if (occ.length === 0) continue;
     if (compareDateStr(dateStr, today) <= 0) {
@@ -6809,7 +6830,9 @@ function getCashRevenueForRange(startDate, endDate, includeFuture) {
 // Sum of real invoice records not yet marked paid (status 'ready' —
 // generated but not sent — or 'outstanding' — sent, awaiting payment)
 // whose covered period (periodKey, a "YYYY-MM" month) overlaps the
-// given range at all.
+// given range at all. Lines dated while the client paid cash are left out
+// (invoiceBillableTotal) — an invoiced cash client is invoiced, but its
+// money stays out of Summary like every other cash client's (v1.6.0).
 function getUnpaidInvoicesTotal(startDate, endDate) {
   const total = (appState.invoices || [])
     .filter(inv => inv.status === 'ready' || inv.status === 'outstanding')
@@ -6819,8 +6842,18 @@ function getUnpaidInvoicesTotal(startDate, endDate) {
       const monthEnd = `${y}-${String(m).padStart(2, '0')}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
       return compareDateStr(monthStart, endDate) <= 0 && compareDateStr(monthEnd, startDate) >= 0;
     })
-    .reduce((s, inv) => s + inv.total, 0);
+    .reduce((s, inv) => s + invoiceBillableTotal(inv), 0);
   return Math.round(total * 100) / 100;
+}
+
+// An invoice's total, less any line dated while the client paid cash (or
+// was on a £0 rate). An invoice with no such line returns its stored
+// total untouched, so every non-cash figure is exactly what it was.
+function invoiceBillableTotal(inv) {
+  const client = appState.clients.find(c => c.id === inv.clientId);
+  const lines = inv.lineItems || [];
+  if (lines.every(li => isBillableClientOnDate(client, li.date))) return inv.total;
+  return lines.reduce((s, li) => s + (isBillableClientOnDate(client, li.date) ? li.total : 0), 0);
 }
 
 // Sum of the live "Ready to Send" queue, counting only the individual
@@ -6837,6 +6870,8 @@ function getUngeneratedInvoicesValue(startDate, endDate) {
     const client = appState.clients.find(c => c.id === entry.clientId);
     entry.occurred.forEach(o => {
       if (compareDateStr(o.date, startDate) < 0 || compareDateStr(o.date, endDate) > 0) return;
+      // The queue includes invoiced cash clients (v1.6.0); Summary does not.
+      if (!isBillableClientOnDate(client, o.date)) return;
       const snap = client ? clientSnapshotOn(client, o.date) : null;
       const rate = snap ? (effectiveHourlyRate(snap.rateAmount, snap.rateDurationHours) || 0) : 0;
       total += roundUpToNearestTenPence(o.hours * rate);
