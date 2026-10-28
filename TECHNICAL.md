@@ -142,8 +142,9 @@ Two record types live in `appointments`, and the difference drives most of the d
 
 `getOccurrencesForDate(dateStr)` resolves what actually shows:
 
-- **Weekends only ever show ad-hoc entries**, never a template.
-- Weekdays resolve the active template version for that day-of-week and week letter, excluding
+- **The working week is Monday–Saturday** (`isNonWorkingDay` is true for Sunday only). Sunday only
+  ever shows ad-hoc entries, never a template.
+- Working days (Saturday included) resolve the active template version for that day-of-week and week letter, excluding
   `cancelledDates`, then add any ad-hoc entry on that exact date.
 - The result is sorted by `effectiveSlotOrder(appt, dateStr)` — an `orderOverrides[date]` entry if
   one exists, otherwise the record's own `slotOrder`.
@@ -156,7 +157,7 @@ closes the current template version at `effectiveDate - 1` and opens a new one c
 changes, so weeks already past keep what was true then.
 
 **Day capacity** is a display heuristic, not data. `dayUsedHours` sums a day's durations (a holiday
-is zero), `weekTotalHours` sums Mon–Fri, and `emptySlotCount` floors the hours left in an assumed
+is zero), `weekTotalHours` sums Mon–Sat, and `emptySlotCount` floors the hours left in an assumed
 10-hour day — so a gap that would only fit 30 minutes never shows a slot.
 
 **Two date-resolved rules: billable, and invoiceable (v1.6.0).** Both resolve the client snapshot
@@ -334,7 +335,7 @@ ad-hoc routes, historic edits staying unchanged, and delete. Its CONTROL check d
 
 ## 6. Diary — drag/drop model
 
-The week grid (`renderDiaryWeek`) draws Mon–Fri as columns, each wired with a single
+The week grid (`renderDiaryWeek`) draws Mon–Sat as six columns (`grid-template-columns: repeat(6, 1fr)`), each wired with a single
 `ondragover`/`ondrop` pair addressed by that column's own date.
 
 Because a template has no stored date of its own (§5), every reorder or move on one goes through a
@@ -435,7 +436,7 @@ Structural conventions, several lifted from BLOC:
 
 `renderHome()` renders one day, `homeSelectedDate`, defaulting to today.
 
-- Header shows the weekday/date, "Today" or "Past", and `Week A` / `Week B` (or "Weekend"), with
+- Header shows the weekday/date, "Today" or "Past", and `Week A` / `Week B` (or "Sunday"), with
   the day's and the week's total hours.
 - A **holiday** short-circuits to a banner; no rows are drawn.
 - Each row's height is proportional to duration (`34 + durationHours * 16` px).
@@ -444,7 +445,8 @@ Structural conventions, several lifted from BLOC:
 - **Call and Message** are inline circular icon buttons on the row, shown only when the client has
   a phone number. Message opens the template picker (`openMessageTemplatePicker`), whose entries
   come from Settings.
-- `homeShiftDay(delta)` **skips weekends** by stepping again in the same direction.
+- `homeShiftDay(delta)` **skips Sunday** by stepping again in the same direction; `homePickDate` rolls
+  a picked Sunday forward to Monday.
 
 > **Home is view-only.** No add, no edit, no drag — all of that lives on Diary. The one exception
 > is the quick-add receipt button, which is about logging a cost on the spot, not editing the
@@ -499,7 +501,7 @@ most recent 24 months as a sanity bound.
 A client/month pair enters the queue when all of these hold:
 
 - `getClientCompletedOccurrencesInMonth` found at least one occurrence on or before today
-  (weekends, holidays and dates failing `isInvoiceableClientOnDate` excluded — §5; a cash
+  (Sundays, holidays and dates failing `isInvoiceableClientOnDate` excluded — §5; a cash
   payment method does **not** exclude a visit here);
 - **the month is complete** — either it is a past month, or it has no future occurrence left — **or
   it is the current month and today is in the early-invoicing window** (`isInEarlyInvoiceWindow`:
@@ -906,8 +908,13 @@ Promise.all([ loadClients, ensureAppSettings, loadAppointments, loadInvoices, lo
 - **Never read a versioned field directly.** Go through `resolveVersionedValue` or a client
   snapshot accessor, with the date you actually mean.
 - **`escapeHtml` every interpolated value.** The render functions write `innerHTML`.
-- **Weekends and holidays are excluded consistently** — by the diary, `dayUsedHours`, the invoice
-  queue and mileage. A new surface that walks dates must do the same.
+- **Sundays and holidays are excluded consistently** — by the diary, `dayUsedHours`, the invoice
+  queue, Summary and mileage, all through `isNonWorkingDay` / `isHolidayDate`. A new surface that
+  walks dates must do the same.
+- 🚨 **The working week lives in `isNonWorkingDay` plus three `i < 6` loops** (`weekTotalHours`,
+  `renderDiaryWeek`, the Diary tour's appointment lookup) and the grid's `repeat(6, 1fr)`. Changing
+  one without the others opens a day in the Diary that the money paths skip, or the reverse;
+  `scripts/verify-saturday-working-day.js` checks they agree.
 - **The past is unreschedulable, not unwritable** (v1.3.0 — see §5.1). `isPastDate` still gates
   every path that would *move* history: drag, reorder, cross-day move, adding to a past day, and
   truncating a recurring slot from a past date. A single-occurrence *correction* is allowed, and
@@ -925,7 +932,7 @@ Promise.all([ loadClients, ensureAppSettings, loadAppointments, loadInvoices, lo
 
 ## 23. Versioning
 
-No version was tracked before **v1.1.0**. Current: **v1.7.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
+No version was tracked before **v1.1.0**. Current: **v1.8.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
 the top of `index.html` and the **Version** line under README's `## Status` **together, on every
 delivery**.
 

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- My Dream Clean — v1.7.0. No version was tracked before v1.1.0;
+<!-- My Dream Clean — v1.8.0. No version was tracked before v1.1.0;
      bump this comment (and README.md's Status line) on each future
      delivery so changes are traceable without digging through git log. -->
 <html lang="en">
@@ -640,8 +640,7 @@ h3 {
 }
 
 /* ── DIARY WEEK GRID — days as columns, slots as rows, horizontally
-   scrollable so all 7 days (inc. weekend ad-hoc) are reachable on a
-   narrow screen while Mon–Fri stays mostly in view. ── */
+   Monday–Saturday, six equal columns. ── */
 .week-nav {
   display: flex;
   align-items: center;
@@ -655,7 +654,7 @@ h3 {
 
 .diary-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr); /* Mon–Sat */
   gap: 6px;
 }
 .diary-day-col { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -1936,8 +1935,8 @@ h3 {
 </div>
 
 <!-- ════════════════════════════════════════
-     MODAL: APPOINTMENT — add/edit a Diary slot. Shared by weekday
-     (recurring template) and weekend (ad-hoc) appointments; the
+     MODAL: APPOINTMENT — add/edit a Diary slot. Shared by working-day
+     (recurring template, Mon–Sat) and ad-hoc appointments; the
      recurring-only actions only show when editing an existing
      template-type appointment. The once/future scope of an edit is asked
      after Save, in modal-appt-edit-scope (v1.5.0).
@@ -3143,7 +3142,7 @@ function startDiaryTour() {
         body: 'Tap here to jump straight to a specific week, or use the arrows to step one week at a time. The label underneath shows whether it\u2019s a Week A or Week B.' },
       { targetId: 'diary-week-total', screen: 'diary',
         title: 'Hours booked this week',
-        body: 'A running total of hours booked Monday to Friday \u2014 weekends aren\u2019t counted.' },
+        body: 'A running total of hours booked Monday to Saturday \u2014 Sundays aren\u2019t counted.' },
       // Combines the original two-step "drag to reorder" / "tap to add"
       // pair into a single step, since both point at the same grid and
       // two tooltips over the same element back to back felt repetitive.
@@ -3162,7 +3161,7 @@ function startDiaryTour() {
         onEnter: (step) => {
           const monday = diaryWeekMonday || getMondayOfWeek(getLocalToday());
           let found = null, foundDate = null;
-          for (let i = 0; i < 5; i++) {
+          for (let i = 0; i < 6; i++) {
             const d = addDays(monday, i);
             if (isPastDate(d) || isHolidayDate(d)) continue;
             const occ = getOccurrencesForDate(d);
@@ -3856,7 +3855,7 @@ async function buildAddressValue(postcode, line1, line2, previousAddr) {
 //
 // Appointment model (see HANDOFF.md for the original suggested shape):
 //   type: 'template' | 'adhoc'
-//   template: 'A'|'B'|null, dayOfWeek: 'mon'..'fri'|null   (template only)
+//   template: 'A'|'B'|null, dayOfWeek: 'mon'..'sat'|null   (template only)
 //   date: 'YYYY-MM-DD'|null                                (adhoc only)
 //   slotOrder: number
 //   clientId, durationHours
@@ -3972,7 +3971,13 @@ async function loadAppointments() {
 // ── Date/week helpers ────────────────────────────────────────────────
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 function getDayOfWeekKey(dateStr) { return DAY_KEYS[parseLocalDateStr(dateStr).getDay()]; }
-function isWeekend(dateStr) { const k = getDayOfWeekKey(dateStr); return k === 'sat' || k === 'sun'; }
+// Working days are Monday–Saturday; Sunday is the only non-working day.
+// Saturday is a full working day (v1.8.0): a Diary column, recurring A/B
+// slots, and counted by capacity, the invoice queue, Summary and mileage
+// exactly like a weekday. Every "is this a day the business works?" check
+// goes through here, so changing the working week is this one line plus
+// the Mon–Sat loops that call addDays(monday, i) for i < 6.
+function isNonWorkingDay(dateStr) { return getDayOfWeekKey(dateStr) === 'sun'; }
 
 function getMondayOfWeek(dateStr) {
   const d = parseLocalDateStr(dateStr);
@@ -4000,13 +4005,13 @@ function formatHoursShort(h) {
 }
 
 // ── Resolving what actually shows on a given date ───────────────────
-// Weekends only ever show ad-hoc entries (never a template). Weekdays
+// Sunday only ever shows ad-hoc entries (never a template). Working days
 // resolve the active template version for that day-of-week/week-letter,
 // excluding any single-occurrence cancellations, plus any ad-hoc entries
 // that happen to fall on that exact date.
 function getOccurrencesForDate(dateStr) {
   let occ;
-  if (isWeekend(dateStr)) {
+  if (isNonWorkingDay(dateStr)) {
     occ = appState.appointments.filter(a => a.type === 'adhoc' && a.date === dateStr);
   } else {
     const dow = getDayOfWeekKey(dateStr);
@@ -4028,7 +4033,7 @@ function getOccurrencesForDate(dateStr) {
 // otherwise cancelling a past occurrence is a one-way door, since nothing
 // renders for it and a past day has no "+" to re-add it with.
 function cancelledOccurrencesForDate(dateStr) {
-  if (isWeekend(dateStr)) return []; // weekends only ever hold adhoc records, which are deleted rather than cancelled
+  if (isNonWorkingDay(dateStr)) return []; // Sunday only ever holds adhoc records, which are deleted rather than cancelled
   const dow = getDayOfWeekKey(dateStr);
   const letter = getWeekLetter(dateStr);
   // A cancellation that exists only to make room for a replacement ad-hoc
@@ -4112,7 +4117,7 @@ function dayUsedHours(dateStr) {
 
 function weekTotalHours(mondayStr) {
   let total = 0;
-  for (let i = 0; i < 5; i++) total += dayUsedHours(addDays(mondayStr, i)); // Mon–Fri only — weekends aren't used
+  for (let i = 0; i < 6; i++) total += dayUsedHours(addDays(mondayStr, i)); // Mon–Sat — Sunday isn't a working day
   return total;
 }
 
@@ -4514,7 +4519,7 @@ function renderHome() {
   document.getElementById('home-day-sub').textContent =
     homeSelectedDate === today ? 'Today' : (isPast ? 'Past' : '');
   document.getElementById('home-week-label').textContent =
-    isWeekend(homeSelectedDate) ? 'Weekend' : ('Week ' + getWeekLetter(homeSelectedDate));
+    isNonWorkingDay(homeSelectedDate) ? 'Sunday' : ('Week ' + getWeekLetter(homeSelectedDate));
 
   const bodyEl = document.getElementById('home-body');
   const totalEl = document.getElementById('home-week-total');
@@ -4529,7 +4534,7 @@ function renderHome() {
   const usedHours = occurrences.reduce((s, a) => s + a.durationHours, 0);
   const monday = getMondayOfWeek(homeSelectedDate);
   totalEl.textContent = `${formatHours(usedHours)} today · ${formatHours(weekTotalHours(monday))} this week`;
-  const homeWeekLetterClass = isWeekend(homeSelectedDate) ? '' : (getWeekLetter(homeSelectedDate) === 'A' ? 'week-a' : 'week-b');
+  const homeWeekLetterClass = isNonWorkingDay(homeSelectedDate) ? '' : (getWeekLetter(homeSelectedDate) === 'A' ? 'week-a' : 'week-b');
 
   // Home stays view-only for editing — no add/edit/drag here, that all
   // lives on the Diary week grid. Call/Message are inline icon buttons
@@ -4573,7 +4578,7 @@ function renderHome() {
 
 function homeShiftDay(delta) {
   let next = addDays(homeSelectedDate || getLocalToday(), delta);
-  while (isWeekend(next)) next = addDays(next, delta); // weekends aren't used — skip straight over them
+  while (isNonWorkingDay(next)) next = addDays(next, delta); // Sunday isn't a working day — skip straight over it
   homeSelectedDate = next;
   renderHome();
 }
@@ -4583,11 +4588,8 @@ function openHomeDatePicker() {
 }
 function homePickDate(val) {
   if (val) {
-    // If a weekend date somehow gets picked, roll forward to the following Monday.
-    if (isWeekend(val)) {
-      const dow = getDayOfWeekKey(val);
-      val = addDays(val, dow === 'sat' ? 2 : 1);
-    }
+    // If a Sunday gets picked, roll forward to the following Monday.
+    if (isNonWorkingDay(val)) val = addDays(val, 1);
     homeSelectedDate = val;
   }
   closeModal('modal-home-date');
@@ -4677,7 +4679,7 @@ function renderDiaryWeek() {
 
   let weekTotal = 0;
   let html = '';
-  for (let i = 0; i < 5; i++) { // Mon–Fri only — weekends aren't used
+  for (let i = 0; i < 6; i++) { // Mon–Sat — Sunday isn't a working day
     const dateStr = addDays(diaryWeekMonday, i);
     const dObj = parseLocalDateStr(dateStr);
     const dayName = dObj.toLocaleDateString('en-GB', { weekday: 'short' });
@@ -5054,7 +5056,7 @@ function saveAppointment() {
     const occ = getOccurrencesForDate(ctxDate);
     const nextOrder = occ.length > 0 ? Math.max(...occ.map(a => a.slotOrder || 0)) + 1 : 1;
     let newAppt;
-    if (isWeekend(ctxDate)) {
+    if (isNonWorkingDay(ctxDate)) {
       newAppt = {
         id: uuid(), type: 'adhoc', template: null, dayOfWeek: null, date: ctxDate,
         slotOrder: nextOrder, clientId, durationHours: duration,
@@ -5362,7 +5364,7 @@ function getClientCompletedOccurrencesInMonth(clientId, monthKey) {
   let hasFuture = false;
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    if (isWeekend(dateStr) || isHolidayDate(dateStr)) continue;
+    if (isNonWorkingDay(dateStr) || isHolidayDate(dateStr)) continue;
     // Invoice inclusion, not the cash rule (v1.6.0): an invoiced client
     // paying cash still gets every visit invoiced. A £0 rate, or a date
     // on which the client was not invoiced, is still left off.
@@ -6854,7 +6856,7 @@ function getRevenueForRange(startDate, endDate, includeFuture) {
   const today = getLocalToday();
   let d = startDate;
   while (compareDateStr(d, endDate) <= 0) {
-    if (!isWeekend(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
+    if (!isNonWorkingDay(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
       getOccurrencesForDate(d).forEach(appt => {
         const client = appState.clients.find(c => c.id === appt.clientId);
         if (!isBillableClientOnDate(client, d)) return;
@@ -6877,7 +6879,7 @@ function getCashRevenueForRange(startDate, endDate, includeFuture) {
   const today = getLocalToday();
   let d = startDate;
   while (compareDateStr(d, endDate) <= 0) {
-    if (!isWeekend(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
+    if (!isNonWorkingDay(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
       getOccurrencesForDate(d).forEach(appt => {
         const client = appState.clients.find(c => c.id === appt.clientId);
         const snap = client ? clientSnapshotOn(client, d) : null;
@@ -7073,7 +7075,7 @@ function getCachedMileageForRange(startDate, endDate, includeFuture) {
   const today = getLocalToday();
   let d = startDate;
   while (compareDateStr(d, endDate) <= 0) {
-    if (!isWeekend(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
+    if (!isNonWorkingDay(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
       const fp = dayRouteFingerprint(d);
       const cached = cache[d];
       if (cached && cached.fingerprint === fp) miles += cached.miles || 0;
@@ -7140,7 +7142,7 @@ async function backgroundFillMileage(startDate, endDate, includeFuture) {
     const today = getLocalToday();
     let d = startDate, sinceSave = 0;
     while (compareDateStr(d, endDate) <= 0) {
-      if (!isWeekend(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
+      if (!isNonWorkingDay(d) && !isHolidayDate(d) && (includeFuture || compareDateStr(d, today) <= 0)) {
         const fp = dayRouteFingerprint(d);
         const cached = cache[d];
         const alreadyGood = cached && cached.fingerprint === fp && cached.miles !== null && cached.miles !== undefined;
