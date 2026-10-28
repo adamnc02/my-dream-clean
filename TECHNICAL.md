@@ -159,11 +159,27 @@ changes, so weeks already past keep what was true then.
 is zero), `weekTotalHours` sums Mon–Fri, and `emptySlotCount` floors the hours left in an assumed
 10-hour day — so a gap that would only fit 30 minutes never shows a slot.
 
-**One shared billability rule.** `isBillableClientOnDate(client, dateStr)` is the single check used
-by mileage, Summary and the invoice queue alike, resolved against the **appointment's own date**
-rather than today's values — so what was true at the time is what counts. It exists as one function
-precisely so the three cannot drift apart; if a new surface needs the same question answered, call
-it rather than re-deriving it.
+**Two date-resolved rules: billable, and invoiceable (v1.6.0).** Both resolve the client snapshot
+on the **appointment's own date** rather than today's values — so what was true at the time is what
+counts — and each exists as one function so its callers cannot drift apart. If a new surface needs
+either question answered, call the function rather than re-deriving it.
+
+| Rule | True when | Used by |
+|---|---|---|
+| `isBillableClientOnDate(client, dateStr)` | not Cash **and** rate > £0 | mileage, Summary revenue/profit, Summary's **Unpaid Invoices** and **not yet generated** figures |
+| `isInvoiceableClientOnDate(client, dateStr)` | `isInvoiced` **and** rate > £0 — payment method ignored | which visits go on an invoice: the queue, generation and drift (`getClientCompletedOccurrencesInMonth`) |
+
+So an **invoiced client who pays cash** is invoiced for every visit, while its money stays out of
+every Summary figure and its visits out of mileage.
+
+🚨 **The invoice rule checks `isInvoiced` at the occurrence's date, not just the cash flag removed.**
+`invoicableClients()` filters on today's card, so without the per-date check a client who was cash
+and *not* invoiced in an old month, and is invoiced now, would grow queue entries for those months
+(up to the 24-month backlog).
+
+🚨 **An invoiced client switched to Cash under the old single rule lost every visit from that date
+onwards from its invoice**, and the queue counted the month complete early, since no billable visit
+was left to come. That is what `scripts/verify-cash-invoiced-client.js` reproduces as its control.
 
 ### 5.1 Historic corrections (v1.3.0)
 
@@ -483,7 +499,8 @@ most recent 24 months as a sanity bound.
 A client/month pair enters the queue when all of these hold:
 
 - `getClientCompletedOccurrencesInMonth` found at least one occurrence on or before today
-  (weekends, holidays and non-billable dates excluded);
+  (weekends, holidays and dates failing `isInvoiceableClientOnDate` excluded — §5; a cash
+  payment method does **not** exclude a visit here);
 - **the month is complete** — either it is a past month, or it has no future occurrence left;
 - no invoice already exists for that `clientId|periodKey`;
 - it has not been dismissed (swiped away — `dismissQueueEntry`, stored in
@@ -685,7 +702,13 @@ occurred, Projected also counts future scheduled work inside the window.
 The figures: **Revenue** (`getRevenueForRange`), **Costs** from receipts (`getCostsForRange`),
 **Mileage** with its allowance (§16), **Salary** drawn (`getSalaryForRange`), **Unpaid Invoices**
 (`getUnpaidInvoicesTotal`), the value of invoices **not yet generated**
-(`getUngeneratedInvoicesValue`), and an estimated **Profit**. The mileage allowance is shown but
+(`getUngeneratedInvoicesValue`), and an estimated **Profit**.
+
+Both invoice figures leave out any line dated while the client paid cash (§5), because invoices
+include invoiced cash clients and Summary does not. `invoiceBillableTotal(inv)` returns the stored
+`inv.total` untouched when no line is affected, so every non-cash figure is exactly what it was;
+otherwise it sums only the billable lines, so an invoice straddling a switch to cash counts its
+bank-transfer part. The mileage allowance is shown but
 deliberately **not** folded into the profit estimate — it is a tax allowance, not a cost that has
 left the account.
 
@@ -873,7 +896,7 @@ Promise.all([ loadClients, ensureAppSettings, loadAppointments, loadInvoices, lo
 
 ## 23. Versioning
 
-No version was tracked before **v1.1.0**. Current: **v1.5.1**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
+No version was tracked before **v1.1.0**. Current: **v1.6.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
 the top of `index.html` and the **Version** line under README's `## Status` **together, on every
 delivery**.
 

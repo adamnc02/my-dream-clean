@@ -12,7 +12,7 @@ install.
 
 ## Status
 
-**Version 1.5.1** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
+**Version 1.6.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
 every delivery.
 
 All eight planned build stages are complete, plus the additions made since:
@@ -33,6 +33,7 @@ All eight planned build stages are complete, plus the additions made since:
 | — | Invoice drift detection, amend-while-ready, void &amp; re-issue once sent | ✅ Done |
 | — | Editing a recurring appointment asks "this occurrence or all future" after Save | ✅ Done |
 | — | Invoice PDFs show a commercial client's vendor number even when it was added after the invoice was generated | ✅ Done |
+| — | An invoiced client who pays cash is invoiced for every visit, and still kept out of the money figures | ✅ Done |
 
 **Not yet done — Stage 9 (integration pass):** a full pass on a real iPhone in standalone
 (home-screen) PWA mode. iOS Safari's PWA mode has known quirks — `visualViewport` handling,
@@ -180,8 +181,12 @@ against it" so the amount actually still owed stays visible, but reconciling it 
   actually worked. Previously cancelling was a one-way door, because a cancelled occurrence drew
   nothing you could tap.
 - **One shared rule decides whether an appointment is billable on a given date**, resolved against
-  that date rather than today's values, and used identically by mileage, Summary and Invoices — so
-  the three can never quietly drift apart.
+  that date rather than today's values, and used identically by mileage and every Summary figure —
+  so they can never quietly drift apart. Cash and £0-rate clients are not billable.
+- **Invoices follow the "Is Invoiced" flag, not the payment method.** A client set to Is Invoiced
+  who pays cash still gets every visit on the invoice — for their paperwork — but that money stays
+  out of revenue, profit, unpaid and not-yet-generated totals and mileage, like any other cash
+  client. A £0-rate visit never goes on an invoice.
 
 ---
 
