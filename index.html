@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- My Dream Clean — v1.8.0. No version was tracked before v1.1.0;
+<!-- My Dream Clean — v1.8.1. No version was tracked before v1.1.0;
      bump this comment (and README.md's Status line) on each future
      delivery so changes are traceable without digging through git log. -->
 <html lang="en">
@@ -1341,25 +1341,6 @@ h3 {
         </div>
         <div class="history-toggle"><button type="button" class="inline-btn" onclick="toggleHistoryEl('settings-bizname-history')">Show name history</button></div>
         <div class="history-list" id="settings-bizname-history" style="display:none;"></div>
-      </div>
-
-      <div class="form-group">
-        <div class="label">Business address</div>
-        <div class="row" style="gap:8px;">
-          <input type="text" id="settings-bizaddress-postcode-input" placeholder="Postcode, e.g. BN1 1AA" style="flex:1;" oninput="resetAddressLookup('bizaddress')">
-          <button type="button" class="btn btn-secondary" style="padding:12px 14px;" onclick="lookupAddressesFor('bizaddress')">Look up</button>
-        </div>
-        <div id="settings-bizaddress-postcode-status" class="form-hint"></div>
-        <div style="margin-top:10px;">
-          <input type="text" id="settings-bizaddress-line-input" placeholder="House name/number and street" style="margin-bottom:8px;">
-          <input type="text" id="settings-bizaddress-line2-input" placeholder="Town / City">
-        </div>
-        <div class="effective-date-row">
-          <span class="form-hint">Effective from (only used if the address changed)</span>
-          <input type="date" id="settings-bizaddress-effective-date">
-        </div>
-        <div class="history-toggle"><button type="button" class="inline-btn" onclick="toggleHistoryEl('settings-bizaddress-history')">Show address history</button></div>
-        <div class="history-list" id="settings-bizaddress-history" style="display:none;"></div>
       </div>
 
       <div class="form-group">
@@ -3293,7 +3274,7 @@ function startSettingsTour() {
     startTour([
       { targetId: 'settings-bizprofile-label', screen: 'settings',
         title: 'Your business profile',
-        body: 'Your name, address, bank details, and logo appear on every invoice. Like clients, changes here take effect from the date you choose.' },
+        body: 'Your name, bank details, and logo appear on every invoice. Like clients, changes here take effect from the date you choose.' },
       { targetId: 'settings-salary-list', screen: 'settings',
         title: 'Jenn\u2019s salary',
         body: 'Log salary payments here as they happen \u2014 each one reduces Profit for whichever period it falls in.' },
@@ -3554,8 +3535,6 @@ function renderHistoryList(containerId, history, formatValue) {
 const ADDRESS_FIELD_CONFIG = {
   client: { postcodeInput: 'client-postcode-input', statusEl: 'client-postcode-status',
     line1Input: 'client-address-line-input', line2Input: 'client-address-line2-input' },
-  bizaddress: { postcodeInput: 'settings-bizaddress-postcode-input', statusEl: 'settings-bizaddress-postcode-status',
-    line1Input: 'settings-bizaddress-line-input', line2Input: 'settings-bizaddress-line2-input' },
   home: { postcodeInput: 'settings-home-postcode-input', statusEl: 'settings-home-postcode-status',
     line1Input: 'settings-home-line-input', line2Input: 'settings-home-line2-input' },
 };
@@ -3927,6 +3906,24 @@ function defaultBusinessSettings() {
   };
 }
 
+// Before v1.8.1 mileage fell back to the business address when no home
+// address had coordinates. The business address is no longer editable or
+// read by mileage, so a device that relied on that fallback has it copied
+// into homeAddress, where it can be seen and changed. The coordinates are
+// copied unchanged, so every day's route fingerprint (§16) stays the same
+// and no cached mileage is recomputed. businessAddressHistory itself is
+// kept as stored, so older backups import unchanged. Returns true if it
+// changed anything.
+function promoteBusinessAddressToHome(s) {
+  const home = s.homeAddress;
+  if (home && home.lat != null && home.lng != null) return false;
+  const bizAddr = resolveVersionedValue(s.businessAddressHistory, getLocalToday());
+  if (!bizAddr || bizAddr.lat == null || bizAddr.lng == null) return false;
+  s.homeAddress = { line1: bizAddr.line1 || '', line2: bizAddr.line2 || '', postcode: bizAddr.postcode || '',
+    lat: bizAddr.lat, lng: bizAddr.lng, manual: !!bizAddr.manual };
+  return true;
+}
+
 async function ensureAppSettings() {
   let s = await dbGet('settings', SETTINGS_ID);
   if (!s) {
@@ -3948,6 +3945,7 @@ async function ensureAppSettings() {
   if (repairVersionedHistory(s.businessNameHistory)) repaired = true;
   if (repairVersionedHistory(s.businessAddressHistory)) repaired = true;
   if (repairVersionedHistory(s.bankDetailsHistory)) repaired = true;
+  if (promoteBusinessAddressToHome(s)) repaired = true;
   if (repaired) await dbPut('settings', s);
   appState.settings = s;
 }
@@ -6235,19 +6233,16 @@ function buildInvoicePdfBlob(invoice, client) {
   if (addr && addr.postcode) { doc.text(addr.postcode, margin, y); y += 14; }
 
   const bizName = resolveVersionedValue(appState.settings.businessNameHistory, invoice.statementDate) || 'My Dream Clean';
-  const bizAddr = resolveVersionedValue(appState.settings.businessAddressHistory, invoice.statementDate);
   const hasLogo = !!appState.settings.logoDataUrl;
   if (hasLogo) {
     try { doc.addImage(appState.settings.logoDataUrl, 'PNG', rightX - 50, ry - 8, 50, 50); ry += 50; } catch (e) { /* bad/unsupported image data — skip the logo, never block PDF generation */ }
   }
-  // Business name now always prints here — below the logo when there is
-  // one, or standalone when there isn't — directly above the address.
+  // Business name always prints here — below the logo when there is one,
+  // or standalone when there isn't. The business address is never printed
+  // (v1.8.1); only the client's address appears on an invoice.
   doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
   doc.text(bizName, rightX, ry, { align: 'right' }); ry += 16;
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-  if (bizAddr && bizAddr.line1) { doc.text(bizAddr.line1, rightX, ry, { align: 'right' }); ry += 14; }
-  if (bizAddr && bizAddr.line2) { doc.text(bizAddr.line2, rightX, ry, { align: 'right' }); ry += 14; }
-  if (bizAddr && bizAddr.postcode) { doc.text(bizAddr.postcode, rightX, ry, { align: 'right' }); ry += 14; }
   const vendorNumber = invoiceVendorNumber(client, clientSnap);
   if (vendorNumber) {
     doc.setFont('helvetica', 'bold');
@@ -6990,18 +6985,16 @@ function billableOccurrencesOnDate(dateStr) {
   });
 }
 
-// The journey start/end point for mileage: the configured home address
-// if it has resolved coordinates, otherwise the business address as a
-// fallback — plenty of solo traders never separately fill in a home
-// address but do have a business address on file already. Home always
-// takes priority when both are set; this never affects the client-side
+// The journey start/end point for mileage: the configured home address,
+// once it has resolved coordinates. The business address is no longer
+// editable (v1.8.1) and is never read here — ensureAppSettings copies it
+// into homeAddress once, for a device that relied on it, so a value
+// nobody can see never drives mileage. This never affects the client-side
 // billing address feature, which is invoice-only and has no bearing on
 // mileage in either direction.
 function getMileageOriginAddress() {
   const home = appState.settings.homeAddress;
   if (home && home.lat != null && home.lng != null) return home;
-  const bizAddr = resolveVersionedValue(appState.settings.businessAddressHistory, getLocalToday());
-  if (bizAddr && bizAddr.lat != null && bizAddr.lng != null) return bizAddr;
   return null;
 }
 
@@ -7018,7 +7011,7 @@ function dayRouteFingerprint(dateStr) {
 }
 
 // Returns miles for one day (a number), or null if it genuinely
-// couldn't be computed (no home OR business address with coordinates,
+// couldn't be computed (no home address with coordinates,
 // no API key, lookup failure) — never throws, never blocks the caller.
 async function computeDayMileage(dateStr) {
   const home = getMileageOriginAddress();
@@ -7337,7 +7330,7 @@ function renderSummary() {
       backgroundFillMileage(fyBounds.start, end, isProjected);
     }
   } else {
-    mileageNote = 'Add a home or business address (with a valid postcode) and an OpenRouteService key in Settings to enable mileage.';
+    mileageNote = 'Add a home address (with a valid postcode) and an OpenRouteService key in Settings to enable mileage.';
   }
 
   const salaryCost = getSalaryForRange(start, end);
@@ -7473,15 +7466,6 @@ function renderSettings() {
   document.getElementById('settings-bizname-effective-date').value = '';
   renderHistoryList('settings-bizname-history', s.businessNameHistory, v => v || '(blank)');
 
-  const bizAddr = resolveVersionedValue(s.businessAddressHistory, today);
-  document.getElementById('settings-bizaddress-postcode-input').value = bizAddr ? (bizAddr.postcode || '') : '';
-  document.getElementById('settings-bizaddress-line-input').value = bizAddr ? (bizAddr.line1 || '') : '';
-  document.getElementById('settings-bizaddress-line2-input').value = bizAddr ? (bizAddr.line2 || '') : '';
-  document.getElementById('settings-bizaddress-effective-date').value = '';
-  document.getElementById('settings-bizaddress-postcode-status').textContent = '';
-  resetAddressLookup('bizaddress');
-  renderHistoryList('settings-bizaddress-history', s.businessAddressHistory, v => formatAddressSummary(v));
-
   const bank = resolveVersionedValue(s.bankDetailsHistory, today);
   document.getElementById('settings-bank-name-input').value = bank ? (bank.accountName || '') : '';
   setSortCodeInputValue(bank ? (bank.sortCode || '') : '');
@@ -7541,18 +7525,6 @@ async function saveBusinessProfile() {
   const currentName = resolveVersionedValue(s.businessNameHistory, today) || '';
   if (nameVal !== currentName) {
     try { endVersionedRecord(s.businessNameHistory, nameEffective, nameVal); }
-    catch (e) { alert(e.message); return; }
-  }
-
-  const newPostcode = document.getElementById('settings-bizaddress-postcode-input').value.trim();
-  const newLine1 = formatAddressLine(document.getElementById('settings-bizaddress-line-input').value.trim());
-  const newLine2 = formatAddressLine(document.getElementById('settings-bizaddress-line2-input').value.trim());
-  const addrEffective = document.getElementById('settings-bizaddress-effective-date').value || addDays(today, -1);
-  const currentAddr = resolveVersionedValue(s.businessAddressHistory, today);
-  const newAddr = await buildAddressValue(newPostcode, newLine1, newLine2, currentAddr);
-  const addrChanged = !currentAddr || currentAddr.postcode !== newAddr.postcode || currentAddr.line1 !== newAddr.line1 || currentAddr.line2 !== newAddr.line2;
-  if (addrChanged) {
-    try { endVersionedRecord(s.businessAddressHistory, addrEffective, newAddr); }
     catch (e) { alert(e.message); return; }
   }
 

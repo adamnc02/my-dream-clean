@@ -99,7 +99,8 @@ second is the real HMRC self-employment year.
 ## 4. Versioned fields
 
 Client hourly rate, client address (and the whole client "card" snapshot), and the business
-profile's name, address and bank details are all **versioned**:
+profile's name and bank details are all **versioned**. `businessAddressHistory` is versioned the same
+way and still stored, but it is no longer edited or read (§13, §16):
 
 ```js
 history: [{ from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' | null, value }]   // null `to` = currently active
@@ -627,11 +628,18 @@ the outstanding amount stays visible. Reconciling it is manual.
 
 ## 13. PDF generation and file handling
 
-`buildInvoicePdfBlob(invoice, client)` draws the document with **jsPDF, bundled inline**: logo,
-business details and address as they were on the statement date, client name and billing address,
-the line items, the total, and the bank payment instructions.
+`buildInvoicePdfBlob(invoice, client)` draws the document with **jsPDF, bundled inline**: logo and
+business name as they were on the statement date, client name and billing address, the line items,
+the total, and the bank payment instructions.
 
-**Vendor number (v1.5.1)** — printed as `Vendor #:` under the business address for a commercial
+**No business address (v1.8.1)** — the business address is never printed; the only address on an
+invoice is the client's. Because the PDF is rebuilt on every Share/Download, an invoice generated
+before v1.8.1 also loses it when re-shared; copies already sent or uploaded to Dropbox keep it.
+`settings.businessAddressHistory` is still stored, so older backups import unchanged, but Settings no
+longer shows it and nothing reads it except the one-off promotion in §16.
+`scripts/verify-no-business-address.js` checks the PDF and the promotion.
+
+**Vendor number (v1.5.1)** — printed as `Vendor #:` under the business name for a commercial
 client, via `invoiceVendorNumber(client, clientSnap)`. It is the one card field that does **not**
 follow the statement-date rule: the statement-date card's vendor number wins when it has one,
 otherwise the **current** card's is used. A vendor number is the client's reference for this
@@ -759,10 +767,22 @@ profile.
 **The route.** `computeDayMileage(dateStr)` builds `home → each billable appointment's address, in
 slot order → home` and posts it to the directions API, converting metres to miles at 1dp. The
 journey **always starts and ends at home and is never re-optimised** for the shortest distance.
-`getMileageOriginAddress()` prefers the configured home address and falls back to the business
-address — plenty of solo traders never fill in a separate home address but do have a business one
-on file. It returns `null` rather than throwing when it genuinely cannot compute, and never blocks
-its caller.
+`getMileageOriginAddress()` returns the configured home address once it has coordinates, and
+`null` otherwise; `computeDayMileage` returns `null` rather than throwing when it genuinely cannot
+compute, and never blocks its caller.
+
+**The business-address promotion (v1.8.1).** Mileage used to fall back to the business address when
+no home address had coordinates. That address is no longer editable, so `ensureAppSettings` runs
+`promoteBusinessAddressToHome(s)` on every load: when `homeAddress` has no coordinates and the current
+business address does, it is copied into `homeAddress`, where Settings shows it and it can be
+changed. It never overwrites a home address that has coordinates, and is a no-op on every later load.
+
+> 🚨 **The trap:** dropping the fallback without the promotion. Every day's cached mileage is keyed
+> to a route fingerprint that includes the origin's coordinates, so a device that relied on the
+> fallback would lose its origin, read mileage as unavailable, and drop the mileage cost from every
+> Summary period. The promotion copies the coordinates unchanged, so every fingerprint still matches
+> and no day is recomputed. Reading the business address inside `getMileageOriginAddress` instead
+> would keep mileage working from a value nobody can see or change.
 
 **Caching.** `ensureDayMileageCached(dateStr)` stores each day's result in `settings.mileageCache`
 keyed by date, alongside a **fingerprint** of that day's actual route
@@ -789,7 +809,7 @@ year, not on the window being viewed.
 
 | Section | Notes |
 |---|---|
-| **Business Profile** | Name, address and bank details, each **versioned** (§4), each with its own "Effective from" and a "Show … history" disclosure. `handleLogoUpload` stores the invoice logo as a data URI |
+| **Business Profile** | Name and bank details, each **versioned** (§4), each with its own "Effective from" and a "Show … history" disclosure. `handleLogoUpload` stores the invoice logo as a data URI. There is no business address field (§13) |
 | **Home Address** | The mileage origin (§16), with postcode lookup |
 | **Mileage / Dropbox** | The two API keys, and Connect Dropbox |
 | **Holidays** | Date ranges. An appointment inside a holiday is **skipped, never rescheduled** — `isHolidayDate` is checked by the diary, the invoice queue and mileage alike |
@@ -932,7 +952,7 @@ Promise.all([ loadClients, ensureAppSettings, loadAppointments, loadInvoices, lo
 
 ## 23. Versioning
 
-No version was tracked before **v1.1.0**. Current: **v1.8.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
+No version was tracked before **v1.1.0**. Current: **v1.8.1**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
 the top of `index.html` and the **Version** line under README's `## Status` **together, on every
 delivery**.
 

@@ -12,7 +12,7 @@ install.
 
 ## Status
 
-**Version 1.8.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
+**Version 1.8.1** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
 every delivery.
 
 All eight planned build stages are complete, plus the additions made since:
@@ -120,7 +120,8 @@ Six tabs.
   profit. **Actual** and **Projected** modes decide whether future scheduled work counts. The Year
   view runs on the **UK tax year (6 April – 5 April)** and adds a month-by-month table. The full
   receipts log — add, edit, delete — lives here too.
-- **Settings** — business profile (versioned, same as client fields), home address, the two
+- **Settings** — business profile (name, bank details and logo, versioned like client fields; no
+  business address: invoices show only the client's), home address, the two
   integration keys above, holiday date ranges, salary payments, message templates, light/dark
   theme, account and password, cloud backup, and a full JSON export/import.
 
