@@ -30,7 +30,8 @@ const names = ['toLocalDateStr', 'parseLocalDateStr', 'addDays', 'compareDateStr
   'resolveVersionedValue', 'clientSnapshotOn', 'clientCurrentSnapshot', 'effectiveHourlyRate', 'roundUpToNearestTenPence',
   'isBillableClientOnDate', 'isInvoiceableClientOnDate', 'getClientCompletedOccurrencesInMonth', 'getRevenueForRange',
   'billableOccurrencesOnDate', 'dayUsedHours', 'weekTotalHours', 'renderDiaryWeek', 'homeShiftDay', 'homePickDate',
-  'saveAppointment', 'templateResolvesToSingleDate', 'applyHistoricOccurrenceCorrection'];
+  'saveAppointment', 'templateResolvesToSingleDate', 'applyHistoricOccurrenceCorrection',
+  'openApptAddTypeModal', 'applyApptAddType', 'addNewAppointment', 'formatDateUK'];
 let pass = 0, fail = 0;
 function ok(c, msg) { if (c) { pass++; console.log('✓ ' + msg); } else { fail++; console.log('✗ ' + msg); } }
 
@@ -56,10 +57,12 @@ function mkCtx(today) {
     uuid: (() => { let n = 0; return () => 'new' + (++n); })(),
     persistAppointments: () => ({ then: f => f() }),
     closeModal: () => {}, alert: () => {}, renderHome: () => {},
+    opened: [],
   };
+  ctx.openModalEl = id => ctx.opened.push(id);
   vm.createContext(ctx);
   vm.runInContext(names.map(extract).join('\n') +
-    '\nlet diaryWeekMonday=null, homeSelectedDate=null, _editingAppointmentId=null, _apptModalCtx={};' +
+    '\nlet diaryWeekMonday=null, homeSelectedDate=null, _editingAppointmentId=null, _apptModalCtx={}, _apptAddTypeCtx=null;' +
     '\nthis.setDiary=d=>{diaryWeekMonday=d;}; this.setHome=d=>{homeSelectedDate=d;}; this.home=()=>homeSelectedDate;' +
     '\nthis.setAdd=(d)=>{_editingAppointmentId=null;_apptModalCtx={date:d,refresh:()=>{}};};', ctx);
   ctx.el = el;
@@ -95,10 +98,13 @@ vm.runInContext("isNonWorkingDay = function (d) { const k = getDayOfWeekKey(d); 
 ok(c.getRevenueForRange('2026-10-31', '2026-10-31') === 0 && c.getOccurrencesForDate('2026-10-31').length === 0,
   'CONTROL: the old Sat+Sun rule drops the Saturday slot and its £40 entirely');
 
-// 5 — a new booking on a Saturday is a recurring A/B slot, as on a weekday
+// 5 — a new booking on a Saturday is asked one-off or recurring, as on a
+// weekday (Sunday is never asked), and recurring makes an A/B slot
 c = mkCtx('2026-10-26');
 c.setAdd('2026-11-07'); c.el('appt-client-select').value = 'C'; c.el('appt-duration-input').value = '3';
 c.saveAppointment();
+ok(c.opened.includes('modal-appt-add-type'), 'adding on Sat 7 Nov asks one-off or recurring, as on a weekday');
+c.applyApptAddType('template');
 const made = c.appState.appointments.find(a => a.id === 'new1');
 ok(made && made.type === 'template' && made.dayOfWeek === 'sat' && made.template === 'B' && made.effectiveFrom === '2026-11-07',
   'adding on Sat 7 Nov creates a Week-B Saturday recurring slot');

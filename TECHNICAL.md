@@ -15,6 +15,7 @@ built and why. **Update this alongside README.md whenever a change touches how s
 5. [The appointment model](#5-the-appointment-model)
     - [5.1 Historic corrections (v1.3.0)](#51-historic-corrections-v130)
     - [5.2 Editing a recurring occurrence: once or all future (v1.5.0)](#52-editing-a-recurring-occurrence-once-or-all-future-v150)
+    - [5.3 Adding an appointment: one-off or recurring (v1.9.0)](#53-adding-an-appointment-one-off-or-recurring-v190)
 6. [Diary — drag/drop model](#6-diary--dragdrop-model)
 7. [Shell, navigation and modals](#7-shell-navigation-and-modals)
 8. [Design system](#8-design-system)
@@ -331,6 +332,40 @@ It extracts the real functions from `index.html`'s inline scripts and runs them 
 with a pinned "today". It covers once vs. future, the three picker bounds, the unchanged-save and
 ad-hoc routes, historic edits staying unchanged, and delete. Its CONTROL check deletes
 `replacesTemplateId` and confirms the ghost comes back.
+
+### 5.3 Adding an appointment: one-off or recurring (v1.9.0)
+
+A new appointment on a working day (Mon–Sat) can be either record type, so `saveAppointment`
+asks. After the client and duration validate, it opens **`modal-appt-add-type`** over the Add
+modal and writes nothing. The sheet offers **One-off** (primary) / **Recurring** / Back, and names
+the client, the hours, the weekday, the date and the week letter, so what "recurring" means is on
+screen: every other week on that weekday.
+
+| Choice / case | Record written by `addNewAppointment` |
+|---|---|
+| **One-off** | `adhoc`, `date` = the tapped date |
+| **Recurring** | `template`, `template` = `getWeekLetter(date)`, `dayOfWeek` = that day, `effectiveFrom` = the tapped date, `effectiveTo` = null |
+| **Sunday** | `adhoc`, saved straight away with no question: `getOccurrencesForDate` never resolves a template on a non-working day, so a recurring Sunday slot would be invisible |
+| **Back** | nothing; the Add modal underneath keeps its values |
+
+Both types go to the end of that date's running order (`slotOrder` = the day's highest + 1).
+`addNewAppointment` closes both sheets.
+
+Same arrangement as §5.2: the sheet sits *after* `modal-appointment` in the markup so it stacks on
+top, and `_apptAddTypeCtx` holds the pending add. `applyApptAddType` clears the context before
+writing, so a second tap on a button writes nothing.
+
+> 🚨 **"Recurring" is fortnightly, not weekly.** A template resolves only on its own week letter
+> (§5). A weekly client is two templates, one in Week A and one in Week B, made by adding the
+> client once in each week. Do not relabel the button "every week", and do not make Recurring
+> create both letters: a fortnightly client is the common case the A/B diary exists for.
+
+**Check:** `scripts/verify-add-appt-type.js` (`TZ=Europe/London node scripts/verify-add-appt-type.js`),
+on the same extract-and-stub harness as §5.2. It covers nothing being written before the answer,
+one-off staying on its date, recurring landing on the right letter and day, slot order, a double
+tap, Sunday, and an invalid duration. Its CONTROL check confirms the recurring slot *is* found two
+weeks on, so the one-off's absence there is meaningful. `scripts/verify-saturday-working-day.js`
+also answers the question when it adds its Saturday slot, and asserts it was asked.
 
 ---
 
@@ -952,7 +987,7 @@ Promise.all([ loadClients, ensureAppSettings, loadAppointments, loadInvoices, lo
 
 ## 23. Versioning
 
-No version was tracked before **v1.1.0**. Current: **v1.8.1**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
+No version was tracked before **v1.1.0**. Current: **v1.9.0**. Bump the `<!-- My Dream Clean — vX.Y.Z -->` comment at
 the top of `index.html` and the **Version** line under README's `## Status` **together, on every
 delivery**.
 

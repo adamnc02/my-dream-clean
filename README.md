@@ -12,7 +12,7 @@ install.
 
 ## Status
 
-**Version 1.8.1** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
+**Version 1.9.0** — see `index.html`'s top-of-file comment, which is bumped alongside this line on
 every delivery.
 
 All eight planned build stages are complete, plus the additions made since:
@@ -36,6 +36,7 @@ All eight planned build stages are complete, plus the additions made since:
 | — | An invoiced client who pays cash is invoiced for every visit, and still kept out of the money figures | ✅ Done |
 | — | Invoices can be generated in the last 10 days of the month, including the visits still to come | ✅ Done |
 | — | Saturday is a full working day: a Diary column, recurring slots, and counted everywhere | ✅ Done |
+| — | Adding an appointment asks whether it is a one-off or recurring | ✅ Done |
 
 **Not yet done — Stage 9 (integration pass):** a full pass on a real iPhone in standalone
 (home-screen) PWA mode. iOS Safari's PWA mode has known quirks — `visualViewport` handling,
@@ -96,6 +97,11 @@ Six tabs.
   target column highlights and a line shows exactly where it will land. One-off adjustments (cancel
   or move a single occurrence) never touch the recurring template — you are asked whether a change
   applies **just this once** or **from now on**.
+  Adding one works the same way: tap an empty **+**, pick the client and hours, press Save, and
+  you are asked **One-off** (just that date) or **Recurring** (every other week on that day, from
+  that date, since the diary runs on the A/B fortnight). A client seen every week needs a recurring
+  slot in both Week A and Week B. Sunday is not a working day, so anything added there is always a
+  one-off and nothing is asked.
   Tapping an appointment works the same way: change the client or the hours and press Save, and a
   recurring appointment then asks **Just this occurrence** or **All future occurrences**. Only
   "All future" asks for the date the change takes effect from (today at the earliest). So one

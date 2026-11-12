@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- My Dream Clean — v1.8.1. No version was tracked before v1.1.0;
+<!-- My Dream Clean — v1.9.0. No version was tracked before v1.1.0;
      bump this comment (and README.md's Status line) on each future
      delivery so changes are traceable without digging through git log. -->
 <html lang="en">
@@ -1916,11 +1916,12 @@ h3 {
 </div>
 
 <!-- ════════════════════════════════════════
-     MODAL: APPOINTMENT — add/edit a Diary slot. Shared by working-day
-     (recurring template, Mon–Sat) and ad-hoc appointments; the
-     recurring-only actions only show when editing an existing
-     template-type appointment. The once/future scope of an edit is asked
-     after Save, in modal-appt-edit-scope (v1.5.0).
+     MODAL: APPOINTMENT — add/edit a Diary slot. Shared by recurring
+     (template) and one-off (ad-hoc) appointments; the recurring-only
+     actions only show when editing an existing template-type appointment.
+     Whether a NEW working-day appointment is one-off or recurring is asked
+     after Save, in modal-appt-add-type (v1.9.0); the once/future scope of
+     an edit is asked after Save, in modal-appt-edit-scope (v1.5.0).
 ═══════════════════════════════════════════ -->
 <div class="modal-overlay" id="modal-appointment">
   <div class="modal-sheet">
@@ -2009,6 +2010,31 @@ h3 {
       <div style="height:10px;"></div>
       <button class="btn btn-secondary" style="width:100%;" onclick="showApptScopeChoiceStep()">Back</button>
     </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     MODAL: NEW APPOINTMENT TYPE (v1.9.0) — the second step of adding an
+     appointment on a working day (Mon–Sat): a one-off on the tapped date
+     (an ad-hoc record) or a recurring slot (a template on that day's week
+     letter, so every other week). Shown on Save, after the duration is
+     validated, and nothing is written until a button is picked. Sits AFTER
+     modal-appointment in the DOM so it stacks over it; Back returns to the
+     Add form with its values intact. Never shown on a Sunday, which is not
+     a working day and can only hold a one-off.
+═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-appt-add-type">
+  <div class="modal-sheet">
+    <div class="modal-handle-row">
+      <div class="modal-handle"></div>
+    </div>
+    <div class="modal-title">One-off or recurring?</div>
+    <div class="form-hint" id="appt-add-type-hint" style="margin-bottom:18px;"></div>
+    <button class="btn btn-primary" style="width:100%;" id="appt-add-type-once-btn" onclick="applyApptAddType('adhoc')">One-off</button>
+    <div style="height:10px;"></div>
+    <button class="btn btn-secondary" style="width:100%;" id="appt-add-type-recurring-btn" onclick="applyApptAddType('template')">Recurring</button>
+    <div style="height:10px;"></div>
+    <button class="btn btn-secondary" style="width:100%;" onclick="closeModal('modal-appt-add-type')">Back</button>
   </div>
 </div>
 
@@ -3129,7 +3155,7 @@ function startDiaryTour() {
       // two tooltips over the same element back to back felt repetitive.
       { targetId: 'diary-grid', screen: 'diary',
         title: 'Add, edit, and reorder appointments',
-        body: 'Tap any empty slot to add a new client, or tap an existing appointment to edit it. Appointments can also be dragged \u2014 up and down to reorder within a day, or sideways onto another day to move them there. Past days are locked \u2014 you can\u2019t edit history here.' },
+        body: 'Tap any empty slot to add a new client \u2014 after Save you\u2019ll be asked whether it\u2019s a one-off or recurring \u2014 or tap an existing appointment to edit it. Appointments can also be dragged \u2014 up and down to reorder within a day, or sideways onto another day to move them there. Past days are locked \u2014 you can\u2019t edit history here.' },
       // Opens the Edit Appointment modal for a real occurrence found in
       // the currently-viewed week, favouring a recurring one since
       // that's the only case where both cancel options show at once —
@@ -5050,26 +5076,68 @@ function saveAppointment() {
       appt.durationHours = duration;
       persistAppointments([appt.id]).then(() => { closeModal('modal-appointment'); refresh(); });
     }
+  } else if (isNonWorkingDay(ctxDate)) {
+    // A Sunday never resolves a template (getOccurrencesForDate), so a
+    // recurring slot there would be invisible. It is always a one-off.
+    addNewAppointment('adhoc', ctxDate, clientId, duration, refresh);
   } else {
-    const occ = getOccurrencesForDate(ctxDate);
-    const nextOrder = occ.length > 0 ? Math.max(...occ.map(a => a.slotOrder || 0)) + 1 : 1;
-    let newAppt;
-    if (isNonWorkingDay(ctxDate)) {
-      newAppt = {
-        id: uuid(), type: 'adhoc', template: null, dayOfWeek: null, date: ctxDate,
+    openApptAddTypeModal(ctxDate, clientId, duration, refresh);
+  }
+}
+
+// ── New appointment: one-off or recurring (v1.9.0) ───────────────────
+// A new working-day appointment is either an ad-hoc record on the tapped
+// date or a template on that date's day-of-week and week letter, starting
+// that date. Which one is asked after Save, in modal-appt-add-type, and
+// nothing is written until it is answered. A recurring slot repeats on the
+// SAME week letter only, so "recurring" means every other week; a weekly
+// client is two templates, one per letter.
+let _apptAddTypeCtx = null; // { dateStr, clientId, duration, refresh } — set on open, cleared on apply
+
+function openApptAddTypeModal(dateStr, clientId, duration, refresh) {
+  _apptAddTypeCtx = { dateStr, clientId, duration, refresh };
+  const client = appState.clients.find(c => c.id === clientId);
+  const name = client ? clientCurrentSnapshot(client).name : 'This client';
+  const weekday = parseLocalDateStr(dateStr).toLocaleDateString('en-GB', { weekday: 'long' });
+  const hours = duration === 1 ? '1 hour' : `${duration} hours`;
+  document.getElementById('appt-add-type-hint').textContent =
+    `${name}, ${hours}, on ${weekday} ${formatDateUK(dateStr)}. A one-off is just this date. `
+    + `A recurring appointment repeats every other ${weekday} (Week ${getWeekLetter(dateStr)}) from this date on.`;
+  document.getElementById('appt-add-type-once-btn').textContent = `One-off: just ${formatDateUK(dateStr)}`;
+  document.getElementById('appt-add-type-recurring-btn').textContent = `Recurring: every other ${weekday}`;
+  openModalEl('modal-appt-add-type');
+}
+
+function applyApptAddType(type) {
+  const ctx = _apptAddTypeCtx;
+  if (!ctx) return;
+  _apptAddTypeCtx = null;
+  addNewAppointment(type, ctx.dateStr, ctx.clientId, ctx.duration, ctx.refresh);
+}
+
+// Writes one new appointment at the end of that date's running order.
+// `type` is 'adhoc' (that date only) or 'template' (recurring on the date's
+// week letter and day-of-week, from that date, open-ended).
+function addNewAppointment(type, dateStr, clientId, duration, refresh) {
+  const occ = getOccurrencesForDate(dateStr);
+  const nextOrder = occ.length > 0 ? Math.max(...occ.map(a => a.slotOrder || 0)) + 1 : 1;
+  const newAppt = type === 'template'
+    ? {
+        id: uuid(), type: 'template', template: getWeekLetter(dateStr), dayOfWeek: getDayOfWeekKey(dateStr), date: null,
+        slotOrder: nextOrder, clientId, durationHours: duration,
+        effectiveFrom: dateStr, effectiveTo: null, cancelledDates: [],
+      }
+    : {
+        id: uuid(), type: 'adhoc', template: null, dayOfWeek: null, date: dateStr,
         slotOrder: nextOrder, clientId, durationHours: duration,
         effectiveFrom: null, effectiveTo: null, cancelledDates: [],
       };
-    } else {
-      newAppt = {
-        id: uuid(), type: 'template', template: getWeekLetter(ctxDate), dayOfWeek: getDayOfWeekKey(ctxDate), date: null,
-        slotOrder: nextOrder, clientId, durationHours: duration,
-        effectiveFrom: ctxDate, effectiveTo: null, cancelledDates: [],
-      };
-    }
-    appState.appointments.push(newAppt);
-    persistAppointments([newAppt.id]).then(() => { closeModal('modal-appointment'); refresh(); });
-  }
+  appState.appointments.push(newAppt);
+  persistAppointments([newAppt.id]).then(() => {
+    closeModal('modal-appt-add-type');
+    closeModal('modal-appointment');
+    refresh();
+  });
 }
 
 // Rewrites a single PAST occurrence of a recurring slot without touching the
